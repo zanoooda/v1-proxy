@@ -38,7 +38,8 @@ COMPILED_DENIED_PATHS = [
 ]
 
 # --- Parameter Configuration ---
-VALID_PARAMETERS_CONFIG: List[Dict[str, Any]] = [
+# Constant 1: "supported_parameters" (parameters generally supported by completion-like models)
+_SUPPORTED_PARAMETERS_LIST: List[Dict[str, Any]] = [
     {"label": "max_tokens", "type": "number", "min": 1, "max": 4096, "placeholder": "256"},
     {"label": "temperature", "type": "number", "step": 0.01, "min": 0, "max": 2, "placeholder": "0.7"},
     {"label": "stop", "type": "textarea", "placeholder": "\\n, ###, [END]", "rows": 1},
@@ -60,10 +61,16 @@ VALID_PARAMETERS_CONFIG: List[Dict[str, Any]] = [
     {"label": "response_format", "type": "text", "placeholder": "json_object"},
     {"label": "structured_outputs", "type": "checkbox"},
     {"label": "web_search_options", "type": "textarea", "placeholder": '{"region": "us", "num_results": 5}', "rows": 1},
-    # --- FIX ---
+]
+
+# Constant 2: "second is ... it is requaired parameters" (parameters specific or essential for chat completions)
+_CHAT_COMPLETIONS_SPECIFIC_PARAMETERS_LIST: List[Dict[str, Any]] = [
     {"label": "messages", "type": "textarea", "placeholder": '[{"role": "user", "content": "AHOY!"}]', "rows": 1},
     {"label": "model", "type": "text", "placeholder": "gpt-3.5-turbo"},
 ]
+
+# VALID_PARAMETERS_CONFIG is the combination of these two lists, specifically for chat/completions validation
+VALID_PARAMETERS_CONFIG: List[Dict[str, Any]] = _SUPPORTED_PARAMETERS_LIST + _CHAT_COMPLETIONS_SPECIFIC_PARAMETERS_LIST
 VALID_PARAMETER_NAMES: Set[str] = {param["label"] for param in VALID_PARAMETERS_CONFIG}
 
 
@@ -116,26 +123,35 @@ async def check_access_and_parameters(
             status_code=403, detail=f"Access to {method} /{path} is not allowed."
         )
 
-    # 3. Validate parameters (query and body)
-    all_request_params = set(query_params.keys())
+    # 3. Validate parameters (query and body) *only* for "chat/completions"
+    #    The `path` variable here corresponds to `full_path` from the proxy route.
+    if path == "chat/completions":
+        all_request_params = set(query_params.keys())
 
-    if method in ["POST", "PUT", "PATCH"] and request_body_bytes:
-        if content_type and "application/json" in content_type.lower():
-            try:
-                body_json = json.loads(request_body_bytes.decode() or "{}")
-                if isinstance(body_json, dict):
-                    all_request_params.update(body_json.keys())
-            except json.JSONDecodeError:
-                raise HTTPException(status_code=400, detail="Invalid JSON body.")
+        # Chat completions typically use POST with a JSON body
+        if method == "POST" and request_body_bytes:
+            if content_type and "application/json" in content_type.lower():
+                try:
+                    body_json = json.loads(request_body_bytes.decode() or "{}")
+                    if isinstance(body_json, dict):
+                        all_request_params.update(body_json.keys())
+                except json.JSONDecodeError:
+                    raise HTTPException(status_code=400, detail="Invalid JSON body for chat/completions.")
+            # If not JSON, but body exists for POST to chat/completions, it's likely an issue,
+            # but original code didn't strictly enforce JSON here if body_json failed to load keys.
+            # Upstream will likely reject non-JSON for chat/completions.
 
-    for param_name in all_request_params:
-        if param_name == "stream": # 'stream' is handled by the client and not passed as a model parameter per se.
-            continue
-        if param_name not in VALID_PARAMETER_NAMES:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid parameter: {param_name}. Allowed parameters: {', '.join(sorted(list(VALID_PARAMETER_NAMES)))} or 'stream'.",
-            )
+        for param_name in all_request_params:
+            if param_name == "stream": # 'stream' is generally handled by client, not a model param.
+                continue
+            if param_name not in VALID_PARAMETER_NAMES:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid parameter for {path}: '{param_name}'. Allowed parameters for this endpoint: {', '.join(sorted(list(VALID_PARAMETER_NAMES)))} or 'stream'.",
+                )
+    # For other allowed paths (e.g., "completions", "embeddings"),
+    # parameter validation against VALID_PARAMETER_NAMES is skipped.
+    # The upstream API will handle validation for those.
 
 
 @app.api_route(
