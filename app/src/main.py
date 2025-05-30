@@ -1,12 +1,67 @@
 import os
+import re
+import json
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from starlette.background import BackgroundTask
 from fastapi.responses import StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
 import httpx
+from typing import List, Tuple, Dict, Any, Set
 
 API_KEY = os.getenv("API_KEY")
 API_HOST = os.getenv("API_HOST")
+
+# --- Access Control Configuration ---
+ALLOWED_PATHS_AND_METHODS: List[Tuple[str, str]] = [
+    ("GET", r"models$"),
+    ("GET", r"models/[^/]+/[^/]+/endpoints$"),
+    ("POST", r"chat/completions$"),
+    ("POST", r"completions$"),
+    ("POST", r"embeddings$"),
+    ("GET", r"generation$"),
+    ("POST", r"moderations$"),
+]
+DENIED_PATHS_AND_METHODS: List[Tuple[str, str]] = [
+    ("GET", r"credits$"),
+    ("GET", r"key$"),
+    ("GET", r"keys$"),
+    ("POST", r"keys$"),
+    ("POST", r"credits/coinbase$"),
+    ("POST", r"auth/keys$"),
+]
+COMPILED_ALLOWED_PATHS = [
+    (method, re.compile(pattern)) for method, pattern in ALLOWED_PATHS_AND_METHODS
+]
+COMPILED_DENIED_PATHS = [
+    (method, re.compile(pattern)) for method, pattern in DENIED_PATHS_AND_METHODS
+]
+
+# --- Parameter Configuration ---
+VALID_PARAMETERS_CONFIG: List[Dict[str, Any]] = [
+    {"label": "max_tokens", "type": "number", "min": 1, "max": 4096, "placeholder": "256"},
+    {"label": "temperature", "type": "number", "step": 0.01, "min": 0, "max": 2, "placeholder": "0.7"},
+    {"label": "stop", "type": "textarea", "placeholder": "\\n, ###, [END]", "rows": 1},
+    {"label": "reasoning", "type": "checkbox", "checked": True},
+    {"label": "include_reasoning", "type": "checkbox"},
+    {"label": "tools", "type": "textarea", "placeholder": '[{"type": "calculator"}, {"type": "search"}]', "rows": 1},
+    {"label": "tool_choice", "type": "text", "placeholder": "calculator"},
+    {"label": "top_p", "type": "number", "step": 0.01, "min": 0, "max": 1, "placeholder": "1.0"},
+    {"label": "top_k", "type": "number", "min": 1, "max": 100, "placeholder": "1"},
+    {"label": "min_p", "type": "number", "step": 0.01, "min": 0, "max": 1, "placeholder": "0.0"},
+    {"label": "top_a", "type": "number", "step": 0.01, "min": 0, "max": 1, "placeholder": "0.0"},
+    {"label": "seed", "type": "number", "placeholder": "42"},
+    {"label": "presence_penalty", "type": "number", "step": 0.01, "min": -2, "max": 2, "placeholder": "0.0"},
+    {"label": "frequency_penalty", "type": "number", "step": 0.01, "min": -2, "max": 2, "placeholder": "0.0"},
+    {"label": "repetition_penalty", "type": "number", "step": 0.01, "min": 1, "max": 2, "placeholder": "1.0"},
+    {"label": "logit_bias", "type": "textarea", "placeholder": '{"50256": -100, "198": 5}', "rows": 1},
+    {"label": "logprobs", "type": "number", "min": 1, "max": 5, "placeholder": "1"},
+    {"label": "top_logprobs", "type": "number", "min": 1, "max": 5, "placeholder": "1"},
+    {"label": "response_format", "type": "text", "placeholder": "json_object"},
+    {"label": "structured_outputs", "type": "checkbox"},
+    {"label": "web_search_options", "type": "textarea", "placeholder": '{"region": "us", "num_results": 5}', "rows": 1},
+]
+VALID_PARAMETER_NAMES: Set[str] = {param["label"] for param in VALID_PARAMETERS_CONFIG}
 
 
 def get_lifespan():
@@ -15,11 +70,75 @@ def get_lifespan():
         async with httpx.AsyncClient(timeout=None) as client:
             app.state.http = client
             yield
-
     return lifespan
 
 
 app = FastAPI(lifespan=get_lifespan())
+
+# --- 2. ADD CORS MIDDLEWARE ---
+# This is a very permissive configuration, allowing all origins, methods, and headers.
+# For production, you should restrict `allow_origins` to your actual frontend domain(s).
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
+# --- END OF CORS MIDDLEWARE ADDITION ---
+
+
+async def check_access_and_parameters(
+    method: str,
+    path: str,
+    query_params: Dict[str, Any],
+    request_body_bytes: bytes,
+    content_type: str | None,
+):
+    # 1. Check if explicitly denied
+    for denied_method, denied_pattern in COMPILED_DENIED_PATHS:
+        if method == denied_method and denied_pattern.fullmatch(path):
+            raise HTTPException(
+                status_code=403,
+                detail=f"Access to {method} /{path} is explicitly forbidden.", # Added slash for consistency
+            )
+
+    # 2. Check if allowed
+    is_path_allowed = False
+    for allowed_method, allowed_pattern in COMPILED_ALLOWED_PATHS:
+        if method == allowed_method and allowed_pattern.fullmatch(path):
+            is_path_allowed = True
+            break
+
+    if not is_path_allowed:
+        raise HTTPException(
+            status_code=403, detail=f"Access to {method} /{path} is not allowed." # Added slash
+        )
+
+    # 3. Validate parameters (query and body)
+    # Combine query and body parameters for validation
+    all_request_params = set(query_params.keys())
+
+    if method in ["POST", "PUT", "PATCH"] and request_body_bytes:
+        if content_type and "application/json" in content_type.lower():
+            try:
+                body_json = json.loads(request_body_bytes.decode() or "{}")
+                if isinstance(body_json, dict):
+                    all_request_params.update(body_json.keys())
+                # else: could be a list of items, handle if necessary (not handled here)
+            except json.JSONDecodeError:
+                raise HTTPException(status_code=400, detail="Invalid JSON body.")
+
+    for param_name in all_request_params:
+        # Allow "stream" parameter, as it's common for these APIs and often handled by clients like OpenAI's SDK.
+        # It might not be in your VALID_PARAMETERS_CONFIG if it's a general behavior toggle.
+        if param_name == "stream":
+            continue
+        if param_name not in VALID_PARAMETER_NAMES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid parameter: {param_name}. Allowed parameters: {', '.join(sorted(list(VALID_PARAMETER_NAMES)))} or 'stream'.",
+            )
 
 
 @app.api_route(
@@ -28,27 +147,47 @@ app = FastAPI(lifespan=get_lifespan())
     response_class=StreamingResponse,
 )
 async def proxy(full_path: str, request: Request):
+    request_body_bytes = await request.body()
+
+    await check_access_and_parameters(
+        method=request.method,
+        path=full_path,
+        query_params=dict(request.query_params),
+        request_body_bytes=request_body_bytes,
+        content_type=request.headers.get("content-type"),
+    )
+
     target_url = f"https://{API_HOST}/api/v1/{full_path}"
     headers = {"Authorization": f"Bearer {API_KEY}"}
     if request.headers.get("content-type"):
         headers["Content-Type"] = request.headers.get("content-type")
+
     stream_ctx = app.state.http.stream(
         method=request.method,
         url=target_url,
         headers=headers,
         params=request.query_params,
-        content=await request.body(),
+        content=request_body_bytes,
         timeout=None,
     )
-    resp = await stream_ctx.__aenter__()
+
     try:
+        resp = await stream_ctx.__aenter__()
         resp.raise_for_status()
     except httpx.HTTPStatusError as exc:
         error_body = await exc.response.aread()
         await resp.aclose()
         raise HTTPException(
-            status_code=exc.response.status_code, detail=error_body.decode(errors="replace")
+            status_code=exc.response.status_code,
+            detail=error_body.decode(errors="replace"),
         )
+    except httpx.RequestError as exc:
+        print(f"RequestError connecting to target: {exc}")
+        raise HTTPException(
+            status_code=502,
+            detail=f"Error connecting to upstream service: {exc!r}",
+        )
+
     background = BackgroundTask(stream_ctx.__aexit__, None, None, None)
     return StreamingResponse(
         resp.aiter_raw(),
@@ -56,7 +195,19 @@ async def proxy(full_path: str, request: Request):
         headers={
             k: v
             for k, v in resp.headers.items()
-            if k.lower() not in ("transfer-encoding", "connection")
+            if k.lower() not in ("transfer-encoding", "connection", "content-encoding")
         },
         background=background,
     )
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    if not API_KEY or not API_HOST:
+        print("Warning: API_KEY and API_HOST environment variables are not set.")
+        print("Using placeholders for testing.")
+        os.environ.setdefault("API_KEY", "test_api_key")
+        os.environ.setdefault("API_HOST", "dummy.api.host")
+
+    uvicorn.run(app, host="0.0.0.0", port=8000)
