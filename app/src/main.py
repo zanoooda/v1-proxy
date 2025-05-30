@@ -60,6 +60,9 @@ VALID_PARAMETERS_CONFIG: List[Dict[str, Any]] = [
     {"label": "response_format", "type": "text", "placeholder": "json_object"},
     {"label": "structured_outputs", "type": "checkbox"},
     {"label": "web_search_options", "type": "textarea", "placeholder": '{"region": "us", "num_results": 5}', "rows": 1},
+    # --- FIX ---
+    {"label": "messages", "type": "textarea", "placeholder": '[{"role": "user", "content": "AHOY!"}]', "rows": 1},
+    {"label": "model", "type": "text", "placeholder": "gpt-3.5-turbo"},
 ]
 VALID_PARAMETER_NAMES: Set[str] = {param["label"] for param in VALID_PARAMETERS_CONFIG}
 
@@ -76,14 +79,12 @@ def get_lifespan():
 app = FastAPI(lifespan=get_lifespan())
 
 # --- 2. ADD CORS MIDDLEWARE ---
-# This is a very permissive configuration, allowing all origins, methods, and headers.
-# For production, you should restrict `allow_origins` to your actual frontend domain(s).
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 # --- END OF CORS MIDDLEWARE ADDITION ---
 
@@ -100,7 +101,7 @@ async def check_access_and_parameters(
         if method == denied_method and denied_pattern.fullmatch(path):
             raise HTTPException(
                 status_code=403,
-                detail=f"Access to {method} /{path} is explicitly forbidden.", # Added slash for consistency
+                detail=f"Access to {method} /{path} is explicitly forbidden.",
             )
 
     # 2. Check if allowed
@@ -112,11 +113,10 @@ async def check_access_and_parameters(
 
     if not is_path_allowed:
         raise HTTPException(
-            status_code=403, detail=f"Access to {method} /{path} is not allowed." # Added slash
+            status_code=403, detail=f"Access to {method} /{path} is not allowed."
         )
 
     # 3. Validate parameters (query and body)
-    # Combine query and body parameters for validation
     all_request_params = set(query_params.keys())
 
     if method in ["POST", "PUT", "PATCH"] and request_body_bytes:
@@ -125,14 +125,11 @@ async def check_access_and_parameters(
                 body_json = json.loads(request_body_bytes.decode() or "{}")
                 if isinstance(body_json, dict):
                     all_request_params.update(body_json.keys())
-                # else: could be a list of items, handle if necessary (not handled here)
             except json.JSONDecodeError:
                 raise HTTPException(status_code=400, detail="Invalid JSON body.")
 
     for param_name in all_request_params:
-        # Allow "stream" parameter, as it's common for these APIs and often handled by clients like OpenAI's SDK.
-        # It might not be in your VALID_PARAMETERS_CONFIG if it's a general behavior toggle.
-        if param_name == "stream":
+        if param_name == "stream": # 'stream' is handled by the client and not passed as a model parameter per se.
             continue
         if param_name not in VALID_PARAMETER_NAMES:
             raise HTTPException(
@@ -182,7 +179,8 @@ async def proxy(full_path: str, request: Request):
             detail=error_body.decode(errors="replace"),
         )
     except httpx.RequestError as exc:
-        print(f"RequestError connecting to target: {exc}")
+        print(f"RequestError connecting to target: {exc}") # Keep for debugging
+        await stream_ctx.__aexit__(None, None, None) # Ensure context is exited on RequestError too
         raise HTTPException(
             status_code=502,
             detail=f"Error connecting to upstream service: {exc!r}",
@@ -195,8 +193,9 @@ async def proxy(full_path: str, request: Request):
         headers={
             k: v
             for k, v in resp.headers.items()
-            if k.lower() not in ("transfer-encoding", "connection", "content-encoding")
+            if k.lower() not in ("transfer-encoding", "connection")
         },
+        media_type=resp.headers.get("content-type"),
         background=background,
     )
 
