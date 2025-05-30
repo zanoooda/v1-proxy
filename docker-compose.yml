@@ -12,6 +12,8 @@ services:
     volumes:
       - "${STATIC_CONTENT_PATH}:/usr/share/nginx/html:ro"
       - ./nginx/nginx.conf.template:/etc/nginx/nginx.conf.template:ro
+      - ./server.crt:/etc/nginx/ssl/server.crt:ro
+      - ./server.key:/etc/nginx/ssl/server.key:ro
     command: >
       /bin/sh -c
       "envsubst '$$API_HOST $$API_KEY' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf
@@ -19,5 +21,6 @@ services:
     env_file: ./.env
     ports:
       - '80:80'
+      - '443:443'
     depends_on:
       - app
