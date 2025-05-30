@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Chat</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+    }
+
+    #container {
+      display: flex;
+      height: 100vh;
+      font-family: system-ui;
+    }
+
+    #parameters {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      min-width: 400px;
+      max-width: 30vw;
+
+      display: none;
+    }
+
+    .parameter {
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .parameter label {
+      min-width: 15vw;
+      margin-bottom: 0;
+    }
+
+    .parameter textarea {
+      display: block;
+      margin-left: 0;
+      width: 100%;
+    }
+
+    .parameter:has(textarea) {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    #chat {
+      flex: 1;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #topbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap; /* Allow wrapping for smaller screens */
+    }
+
+    #modelSelect {
+      flex: 1;
+      min-width: 0;
+    }
+
+    #chatOutput {
+      flex: 1;
+      overflow-y: scroll;
+      box-sizing: border-box;
+      white-space: pre-wrap;
+    }
+
+    #userInput {
+      width: 100%;
+      box-sizing: border-box;
+    }
+    #userInput.speaking-interim {
+        color: gray;
+    }
+
+    #bottom {
+      margin: 8px 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap; /* Allow wrapping for smaller screens */
+    }
+
+    #fileInput {
+      flex: 1;
+    }
+
+    #sendButton {
+      float: right;
+    }
+
+    #modelJsonBlock {
+      display: none;
+      overflow-x: auto;
+      white-space: pre-wrap;
+    }
+
+    .filtersBlock {
+      margin-top: 16px;
+    }
+    .filter-item {
+      display: inline-block;
+      margin-right: 12px;
+    }
+
+    /* Small controls for speech */
+    .speech-control {
+        /* padding: 6px 10px; */
+        /* font-size: 0.9em; */
+    }
+    .speech-select {
+        /* padding: 5px; */
+        /* font-size: 0.9em; */
+        max-width: 150px; /* Limit width of language selectors */
+    }
+
+
+    @media (max-width: 600px) {
+
+      html,
+      body,
+      input,
+      textarea,
+      select,
+      button,
+      label,
+      pre {
+        font-size: 4vw !important;
+        line-height: 1.2 !important;
+      }
+
+      #container {
+        flex-direction: column;
+        min-width: 0;
+        max-width: 100vw;
+      }
+
+      #parameters {
+        min-width: 0;
+        max-width: 100vw;
+        padding: 8px;
+      }
+
+      #chat {
+        padding: 8px;
+      }
+
+      .parameter label {
+        min-width: 0;
+      }
+      .speech-select {
+          max-width: none; /* Remove max-width on small screens */
+          width: 100%; /* Make selects take full width if they wrap */
+          margin-top: 4px;
+      }
+      .speech-control {
+          width: 100%; /* Make buttons take full width if they wrap */
+          margin-top: 4px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div id="container">
+    <div id="parameters">
+      <div class="parameter">
+        <label for="max_tokens">max_tokens:</label>
+        <input id="max_tokens" type="number" min="1" max="4096" placeholder="256">
+      </div>
+      <div class="parameter">
+        <label for="temperature">temperature:</label>
+        <input id="temperature" type="number" step="0.01" min="0" max="2" placeholder="0.7">
+      </div>
+      <div class="parameter">
+        <label for="stop">stop:</label>
+        <textarea id="stop" rows="1" placeholder="\n, ###, [END]"></textarea>
+      </div>
+      <div class="parameter">
+        <label for="reasoning">reasoning:</label>
+        <input id="reasoning" type="checkbox">
+      </div>
+      <div class="parameter">
+        <label for="include_reasoning">include_reasoning:</label>
+        <input id="include_reasoning" type="checkbox">
+      </div>
+      <div class="parameter">
+        <label for="tools">tools:</label>
+        <textarea id="tools" rows="1" placeholder='[{"type": "calculator"}, {"type": "search"}]'></textarea>
+      </div>
+      <div class="parameter">
+        <label for="tool_choice">tool_choice:</label>
+        <input id="tool_choice" type="text" placeholder="calculator">
+      </div>
+      <div class="parameter">
+        <label for="top_p">top_p:</label>
+        <input id="top_p" type="number" step="0.01" min="0" max="1" placeholder="1.0">
+      </div>
+      <div class="parameter">
+        <label for="top_k">top_k:</label>
+        <input id="top_k" type="number" min="1" max="100" placeholder="1">
+      </div>
+      <div class="parameter">
+        <label for="min_p">min_p:</label>
+        <input id="min_p" type="number" step="0.01" min="0" max="1" placeholder="0.0">
+      </div>
+      <div class="parameter">
+        <label for="top_a">top_a:</label>
+        <input id="top_a" type="number" step="0.01" min="0" max="1" placeholder="0.0">
+      </div>
+      <div class="parameter">
+        <label for="seed">seed:</label>
+        <input id="seed" type="number" placeholder="42">
+      </div>
+      <div class="parameter">
+        <label for="presence_penalty">presence_penalty:</label>
+        <input id="presence_penalty" type="number" step="0.01" min="-2" max="2" placeholder="0.0">
+      </div>
+      <div class="parameter">
+        <label for="frequency_penalty">frequency_penalty:</label>
+        <input id="frequency_penalty" type="number" step="0.01" min="-2" max="2" placeholder="0.0">
+      </div>
+      <div class="parameter">
+        <label for="repetition_penalty">repetition_penalty:</label>
+        <input id="repetition_penalty" type="number" step="0.01" min="1" max="2" placeholder="1.0">
+      </div>
+      <div class="parameter">
+        <label for="logit_bias">logit_bias:</label>
+        <textarea id="logit_bias" rows="1" placeholder='{"50256": -100, "198": 5}'></textarea>
+      </div>
+      <div class="parameter">
+        <label for="logprobs">logprobs:</label>
+        <input id="logprobs" type="number" min="1" max="5" placeholder="1">
+      </div>
+      <div class="parameter">
+        <label for="top_logprobs">top_logprobs:</label>
+        <input id="top_logprobs" type="number" min="1" max="5" placeholder="1">
+      </div>
+      <div class="parameter">
+        <label for="response_format">response_format:</label>
+        <input id="response_format" type="text" placeholder="json_object">
+      </div>
+      <div class="parameter">
+        <label for="structured_outputs">structured_outputs:</label>
+        <input id="structured_outputs" type="checkbox">
+      </div>
+      <div class="parameter">
+        <label for="web_search_options">web_search_options:</label>
+        <textarea id="web_search_options" rows="1" placeholder='{"region": "us", "num_results": 5}'></textarea>
+      </div>
+      <button id="clearParamsBtn" type="button" style="margin-bottom:12px;">Clear All</button>
+      <button id="showModelBtn" type="button" style="margin-bottom:12px;">Show Model JSON</button>
+      <pre id="modelJsonBlock"></pre>
+    </div>
+    <div id="chat">
+      <div id="topbar">
+        <button id="toggleParams">Show parameters</button>
+        <select id="modelSelect"></select>
+        <button id="toggleFilters">Show filters</button>
+        <select id="synthLangSelect" class="speech-select" title="Select voice for speech synthesis"></select>
+        <button id="speakResponseBtn" class="speech-control" title="Speak last assistant response">🔊</button>
+        <button id="stopSpeechBtn" class="speech-control" title="Stop speaking">🛑</button>
+      </div>
+      <div id="filters" style="display: none;">
+        <div class="filtersBlock">
+          <label>Vendors:</label>
+          <span id="vendorFilters"></span>
+        </div>
+        <div class="filtersBlock">
+          <label>Tags:</label>
+          <span id="tagFilters"></span>
+        </div>
+        <div class="filtersBlock">
+          <label>Supported parameters:</label>
+          <span id="paramFilters">
+          </span>
+        </div>
+        <div class="filtersBlock">
+          <button id="clearFiltersBtn" type="button">Uncheck All</button>
+          <button id="checkAllFiltersBtn" type="button">Check All</button>
+        </div>
+      </div>
+      <pre id="chatOutput"></pre>
+      <textarea id="userInput" rows="4" placeholder="Type your message..."></textarea>
+      <div id="bottom">
+        <input id="fileInput" type="file" multiple accept="image/*,.pdf">
+        <button id="startSpeechBtn" class="speech-control" title="Start voice input">🎤</button>
+        <select id="speechLangSelect" class="speech-select" title="Select language for voice input"></select>
+        <button id="sendButton">Send</button>
+      </div>
+    </div>
+  </div>
+  <script>
+    // --- Config & State ---
+    const API_URL = "/api/v1";
+    const PREFERRED_MODEL_ID = "google/gemini-2.5-pro-preview";
+
+    const parameters = [
+      { label: "max_tokens", type: "number", min: 1, max: 4096, placeholder: "256" },
+      { label: "temperature", type: "number", step: 0.01, min: 0, max: 2, placeholder: "0.7" },
+      { label: "stop", type: "textarea", placeholder: "\\n, ###, [END]", rows: 1 },
+      { label: "reasoning", type: "checkbox", checked: true },
+      { label: "include_reasoning", type: "checkbox" },
+      { label: "tools", type: "textarea", placeholder: '[{"type": "calculator"}, {"type": "search"}]', rows: 1 },
+      { label: "tool_choice", type: "text", placeholder: "calculator" },
+      { label: "top_p", type: "number", step: 0.01, min: 0, max: 1, placeholder: "1.0" },
+      { label: "top_k", type: "number", min: 1, max: 100, placeholder: "1" },
+      { label: "min_p", type: "number", step: 0.01, min: 0, max: 1, placeholder: "0.0" },
+      { label: "top_a", type: "number", step: 0.01, min: 0, max: 1, placeholder: "0.0" },
+      { label: "seed", type: "number", placeholder: "42" },
+      { label: "presence_penalty", type: "number", step: 0.01, min: -2, max: 2, placeholder: "0.0" },
+      { label: "frequency_penalty", type: "number", step: 0.01, min: -2, max: 2, placeholder: "0.0" },
+      { label: "repetition_penalty", type: "number", step: 0.01, min: 1, max: 2, placeholder: "1.0" },
+      { label: "logit_bias", type: "textarea", placeholder: '{"50256": -100, "198": 5}', rows: 1 },
+      { label: "logprobs", type: "number", min: 1, max: 5, placeholder: "1" },
+      { label: "top_logprobs", type: "number", min: 1, max: 5, placeholder: "1" },
+      { label: "response_format", type: "text", placeholder: "json_object" },
+      { label: "structured_outputs", type: "checkbox" },
+      { label: "web_search_options", type: "textarea", placeholder: '{"region": "us", "num_results": 5}', rows: 1 },
+    ];
+
+    let models = [];
+    let displayModels = [];
+    let currentModelId = "";
+    let messages = [];
+    let displayMessages = [];
+
+    let vendors = [];
+    let tags = [];
+
+    // --- Speech API State ---
+    let recognition;
+    let synth = window.speechSynthesis;
+    let voices = [];
+    let isRecognizing = false;
+    const recognitionLanguages = [
+        { code: 'en-US', name: 'English (US)' },
+        { code: 'ru-RU', name: 'Русский (Россия)' },
+        { code: 'es-ES', name: 'Español (España)' },
+        { code: 'fr-FR', name: 'Français (France)' },
+        { code: 'de-DE', name: 'Deutsch (Deutschland)' },
+        { code: 'ja-JP', name: '日本語 (日本)' },
+        { code: 'zh-CN', name: '中文 (中国)' }
+    ];
+
+
+    // --- Utility Functions ---
+    function escapeHtml(text) {
+      return String(text).replace(/[&<>"']/g, m =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m])
+      );
+    }
+
+    function getElement(id) {
+      return document.getElementById(id);
+    }
+
+    function getParameterValues() {
+      const paramObj = {};
+      parameters.forEach(param => {
+        const el = getElement(param.label);
+        if (!el || el.disabled) return;
+        let value;
+        if (param.type === "checkbox") {
+          if (!el.checked) return;
+          // value = {};
+          if (param.label == "include_reasoning") {
+            value = true;
+          } else {
+            value = {};
+          }
+        } else if (param.type === "textarea" || param.type === "text") {
+          value = el.value.trim();
+        } else {
+          value = el.value;
+        }
+        if (param.type === "number" && value !== "") {
+          value = Number(value);
+          if (isNaN(value)) return;
+        }
+        if (value !== "" && value !== null && value !== undefined) {
+          paramObj[param.label] = value;
+        }
+      });
+      return paramObj;
+    }
+
+    function fileToContent(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl = reader.result;
+          if (file.type === "application/pdf") {
+            resolve({ type: "file", file: { filename: file.name, file_data: dataUrl } });
+          } else if (file.type.startsWith("image/")) {
+            resolve({ type: "image_url", image_url: { url: dataUrl } });
+          } else {
+            reject(new Error(`Unsupported file type: ${file.type}`));
+          }
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    // --- Rendering ---
+    function renderChat() {
+      const out = getElement("chatOutput");
+      out.innerHTML = displayMessages.map(m => {
+        if (m.role === "user") {
+          return `<mark><b>user</b>: ${escapeHtml(m.content)}</mark>`;
+        } else if (m.role === "assistant_thinking") {
+          return `<div class="thinking">${escapeHtml(m.content)}</div>`;
+        } else {
+          return `<b>${escapeHtml(m.modelId)}</b>: ${escapeHtml(m.content)}`;
+        }
+      }).join("\n\n");
+      out.scrollTop = out.scrollHeight;
+    }
+
+    // --- API & Model Handling ---
+    async function loadModels() {
+      const modelsResponse = await fetch(`${API_URL}/models`);
+      const modelsJson = await modelsResponse.json();
+      models = modelsJson.data;
+      displayModels = modelsJson.data.map(model => {
+        model.vendorSlug = model.id.split("/")[0].trim();
+        if (!vendors.includes(model.vendorSlug)) {
+          vendors.push(model.vendorSlug);
+        }
+        if (model.id.split(":").length > 1) {
+          model.tag = model.id.split(":")[1];
+          if (!tags.includes(model.tag)) {
+            tags.push(model.tag);
+          }
+        }
+        return model;
+      });
+      renderModels();
+    }
+
+    function renderModels() {
+      const select = getElement("modelSelect");
+      select.innerHTML = "";
+      displayModels.forEach(model => {
+        const option = document.createElement("option");
+        option.value = model.id;
+        option.textContent = model.name;
+        option.title = model.description;
+        select.appendChild(option);
+      });
+      select.value = currentModelId || PREFERRED_MODEL_ID;
+      currentModelId = currentModelId || PREFERRED_MODEL_ID;
+    }
+
+    function updateParameterFields() {
+      const model = models.find(m => m.id === currentModelId);
+      const supported = model?.supported_parameters || [];
+      parameters.forEach(param => {
+        const el = getElement(param.label);
+        if (!el) return;
+        if (supported.length === 0 || supported.includes(param.label)) {
+          el.disabled = false;
+          el.parentElement.style.opacity = 1;
+        } else {
+          el.disabled = true;
+          el.parentElement.style.opacity = 0.3;
+        }
+      });
+
+
+      // --- File input logic using input_modalities ---
+      const fileInput = getElement("fileInput");
+      const modalities = model?.architecture?.input_modalities || [];
+      if (modalities.length === 1 && modalities[0] === "text") {
+        fileInput.disabled = true;
+        fileInput.accept = "";
+      } else if (modalities.length === 1 && modalities[0] === "image") {
+        fileInput.disabled = false;
+        fileInput.accept = "image/*";
+      } else if (modalities.includes("image") && !modalities.includes("file")) {
+        fileInput.disabled = false;
+        fileInput.accept = "image/*";
+      } else if (modalities.includes("file")) {
+        fileInput.disabled = false;
+        fileInput.accept = "image/*,.pdf";
+      } else {
+        fileInput.disabled = false;
+        fileInput.accept = "";
+      }
+
+      // Hide model JSON block when model changes
+      const modelJsonBlock = getElement("modelJsonBlock");
+      if (modelJsonBlock) modelJsonBlock.style.display = "none";
+    }
+
+    // --- Speech Recognition ---
+    function initializeSpeechRecognition() {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            console.warn("Speech Recognition API not supported by this browser.");
+            getElement("startSpeechBtn").disabled = true;
+            getElement("speechLangSelect").disabled = true;
+            return;
+        }
+        recognition = new SpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = true;
+
+        const speechLangSelect = getElement("speechLangSelect");
+        recognitionLanguages.forEach(lang => {
+            const option = document.createElement('option');
+            option.value = lang.code;
+            option.textContent = lang.name;
+            speechLangSelect.appendChild(option);
+        });
+        recognition.lang = speechLangSelect.value || 'en-US';
+
+        speechLangSelect.onchange = () => {
+            recognition.lang = speechLangSelect.value;
+        };
+
+        recognition.onstart = () => {
+            isRecognizing = true;
+            getElement("startSpeechBtn").textContent = '🛑';
+            getElement("userInput").value = '';
+            getElement("userInput").placeholder = 'Listening...';
+            getElement("userInput").classList.add('speaking-interim');
+        };
+
+        recognition.onresult = (event) => {
+            let interimTranscript = '';
+            let finalTranscript = '';
+            for (let i = event.resultIndex; i < event.results.length; ++i) {
+                const transcriptPart = event.results[i][0].transcript;
+                if (event.results[i].isFinal) {
+                    finalTranscript += transcriptPart;
+                } else {
+                    interimTranscript += transcriptPart;
+                }
+            }
+            getElement("userInput").value = finalTranscript + interimTranscript;
+            if (finalTranscript) {
+                getElement("userInput").classList.remove('speaking-interim');
+            } else {
+                getElement("userInput").classList.add('speaking-interim');
+            }
+        };
+
+        recognition.onerror = (event) => {
+            console.error("Speech recognition error:", event.error);
+            if (event.error === 'no-speech' || event.error === 'audio-capture' || event.error === 'not-allowed') {
+                // These errors often stop recognition, so call onend behavior.
+                recognition.onend(); // Manually trigger onend visuals if not already done.
+            }
+        };
+
+        recognition.onend = () => {
+            isRecognizing = false;
+            getElement("startSpeechBtn").textContent = '🎤';
+            getElement("userInput").classList.remove('speaking-interim');
+            if (getElement("userInput").value.trim() === '') {
+                getElement("userInput").placeholder = "Type your message...";
+            }
+        };
+    }
+
+    function handleStartStopSpeech() {
+        if (!recognition) return;
+        if (isRecognizing) {
+            recognition.stop();
+        } else {
+            try {
+                recognition.start();
+            } catch (e) {
+                console.error("Error starting recognition:", e);
+                alert("Could not start voice recognition. It might already be active or there was an issue.");
+                // Reset UI in case of error during start
+                isRecognizing = false;
+                getElement("startSpeechBtn").textContent = '🎤';
+                getElement("userInput").classList.remove('speaking-interim');
+                getElement("userInput").placeholder = "Type your message...";
+            }
+        }
+    }
+
+    // --- Speech Synthesis ---
+    function populateVoiceList() {
+        if (!synth) return;
+        voices = synth.getVoices().sort((a, b) => {
+            const aname = a.name.toUpperCase();
+            const bname = b.name.toUpperCase();
+            if (aname < bname) return -1;
+            if (aname > bname) return 1;
+            return 0;
+        });
+
+        const synthLangSelect = getElement("synthLangSelect");
+        const previouslySelected = synthLangSelect.value;
+        synthLangSelect.innerHTML = '';
+
+        voices.forEach(voice => {
+            const option = document.createElement('option');
+            option.textContent = `${voice.name} (${voice.lang})`;
+            option.setAttribute('data-lang', voice.lang);
+            option.setAttribute('data-name', voice.name);
+            option.value = voice.name; // Use voice.name as value for simplicity
+            synthLangSelect.appendChild(option);
+        });
+        
+        if (previouslySelected) {
+            synthLangSelect.value = previouslySelected;
+        }
+        if (synthLangSelect.selectedIndex < 0 && voices.length > 0) {
+            // Try to pick a default english voice if available
+            let defaultVoice = voices.find(v => v.lang.startsWith('en') && v.default);
+            if (!defaultVoice) defaultVoice = voices.find(v => v.lang.startsWith('en'));
+            if (!defaultVoice && voices.length > 0) defaultVoice = voices[0];
+            if (defaultVoice) synthLangSelect.value = defaultVoice.name;
+        }
+    }
+
+    function initializeSpeechSynthesis() {
+        if (!synth) {
+            console.warn("Speech Synthesis API not supported by this browser.");
+            getElement("speakResponseBtn").disabled = true;
+            getElement("stopSpeechBtn").disabled = true;
+            getElement("synthLangSelect").disabled = true;
+            return;
+        }
+        populateVoiceList();
+        if (speechSynthesis.onvoiceschanged !== undefined) {
+            speechSynthesis.onvoiceschanged = populateVoiceList;
+        }
+
+        getElement("speakResponseBtn").onclick = handleSpeakResponse;
+        getElement("stopSpeechBtn").onclick = () => {
+            synth.cancel();
+        };
+    }
+
+    function handleSpeakResponse() {
+        if (synth.speaking) {
+            synth.cancel(); // Stop current and speak new, or just stop then require another click? For now, simple stop existing.
+        }
+        const lastAssistantMessage = displayMessages.slice().reverse().find(m => m.role === 'assistant' && m.content);
+        if (lastAssistantMessage && lastAssistantMessage.content) {
+            const utterance = new SpeechSynthesisUtterance(lastAssistantMessage.content);
+            const selectedVoiceName = getElement("synthLangSelect").value;
+            const selectedVoice = voices.find(v => v.name === selectedVoiceName);
+
+            if (selectedVoice) {
+                utterance.voice = selectedVoice;
+                utterance.lang = selectedVoice.lang; // Ensure lang is correctly set from voice
+            } else if (voices.length > 0) {
+                 // Fallback if selection weirdly fails
+                utterance.voice = voices[0];
+                utterance.lang = voices[0].lang;
+            }
+            // Add error handling for utterance
+            utterance.onerror = (event) => {
+                console.error('SpeechSynthesisUtterance.onerror', event);
+                alert(`Error speaking: ${event.error}`);
+            };
+            synth.speak(utterance);
+        } else {
+            alert("No assistant response to speak yet or response is empty.");
+        }
+    }
+
+
+    // --- Event Handlers ---
+    async function handleSend() {
+      const inputEl = getElement("userInput");
+      const userText = inputEl.value.trim();
+      const fileInput = getElement("fileInput");
+      const files = fileInput.files;
+      if (!userText && files.length === 0) return;
+
+      const userMessage = { role: "user", content: userText };
+      messages.push(userMessage);
+      displayMessages.push(userMessage);
+      renderChat();
+
+      const messagesToSend = structuredClone(messages);
+
+      if (files.length > 0) {
+        const contentArr = [];
+        if (userText) contentArr.push({ type: "text", text: userText });
+        try {
+          const fileContents = await Promise.all(Array.from(files).map(fileToContent));
+          contentArr.push(...fileContents);
+        } catch (e) {
+          alert(e.message);
+          return;
+        }
+        messagesToSend[messagesToSend.length - 1] = { role: "user", content: contentArr };
+      }
+
+      inputEl.value = "";
+      inputEl.placeholder = "Type your message..."; // Reset placeholder after send
+      fileInput.value = "";
+
+      const paramObj = getParameterValues();
+
+      const fetchOptions = {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: currentModelId,
+          messages: messagesToSend,
+          stream: true,
+          ...paramObj
+        })
+      };
+
+      try {
+        const res = await fetch(`${API_URL}/chat/completions`, fetchOptions);
+        if (res.headers.get("content-type")?.startsWith("text/event-stream")) {
+          const reader = res.body.getReader(), dec = new TextDecoder();
+          let buf = "", full = "";
+          while (true) {
+            const { value, done } = await reader.read(); if (done) break;
+            buf += dec.decode(value, { stream: true });
+            buf = buf.replace(/(?:^|\n)data: (.+?)\n/g, (_, chunk) => {
+              if (chunk === "[DONE]") { reader.cancel(); return ""; }
+              try {
+                const parsed = JSON.parse(chunk);
+                const delta = parsed.choices?.[0]?.delta;
+                if (delta?.thinking || delta?.reasoning) {
+                  const thinkText = delta.thinking || delta.reasoning;
+                  displayMessages.push({ role: "assistant_thinking", content: thinkText, modelId: currentModelId });
+                  renderChat();
+                }
+                if (delta?.content) {
+                  full += delta.content;
+                  if (displayMessages.at(-1)?.role === "assistant") {
+                    displayMessages.at(-1).content = full;
+                  } else {
+                    displayMessages.push({ role: "assistant", content: full, modelId: currentModelId });
+                  }
+                  renderChat();
+                }
+              } catch (parseError) {
+                console.error("Error parsing stream chunk:", parseError, "Chunk:", chunk);
+              }
+              return "";
+            });
+          }
+          if (messages.at(-1)?.role !== "assistant") {
+            messages.push({ role: "assistant", content: full });
+          } else { // Update last assistant message if it was already added (e.g. from non-stream)
+            messages.at(-1).content = full;
+          }
+
+          if (displayMessages.at(-1)?.role === "assistant") {
+             displayMessages.at(-1).content = full;
+          } else if (full) { // Only push if there's content
+             displayMessages.push({ role: "assistant", content: full, modelId: currentModelId });
+          }
+        } else {
+          const data = await res.json();
+          if (res.ok) {
+            const reply = data.choices?.[0]?.message?.content || "[no response]";
+            messages.push({ role: "assistant", content: reply });
+            displayMessages.push({ role: "assistant", content: reply, modelId: currentModelId });
+          } else {
+            const errorMsg = data.error?.message || "API request failed";
+            console.error("API Error:", data);
+            displayMessages.push({ role: "assistant", content: `Error: ${errorMsg}`, modelId: currentModelId });
+          }
+        }
+      } catch (error) {
+          console.error("Fetch error:", error);
+          displayMessages.push({ role: "assistant", content: `Error: ${error.message}`, modelId: currentModelId });
+      }
+      renderChat();
+    }
+
+    function handleModelChange(e) {
+      currentModelId = e.target.value;
+      updateParameterFields();
+    }
+
+    function handleToggleParams() {
+      let toggleBtn = getElement("toggleParams");
+      let params = getElement("parameters");
+      if (toggleBtn.textContent === "Show parameters") {
+        toggleBtn.textContent = "Hide parameters";
+      } else {
+        toggleBtn.textContent = "Show parameters";
+      }
+      params.style.display = params.style.display === "none" ? "block" : "none";
+    }
+
+    function handleToggleFilters() {
+      const filters = getElement("filters");
+      const toggleBtn = getElement("toggleFilters");
+      if (toggleBtn.textContent === "Show filters") {
+        toggleBtn.textContent = "Hide filters";
+      } else {
+        toggleBtn.textContent = "Show filters";
+      }
+      filters.style.display = filters.style.display === "none" ? "block" : "none";
+    }
+
+    function handleClearParams() {
+      parameters.forEach(param => {
+        const el = getElement(param.label);
+        if (!el) return;
+        if (param.type === "checkbox") {
+          el.checked = !!param.checked;
+        } else {
+          el.value = "";
+        }
+      });
+    }
+
+    function handleShowModelJson() {
+      const model = models.find(m => m.id === currentModelId);
+      const modelJsonBlock = getElement("modelJsonBlock");
+      const showModelBtn = getElement("showModelBtn");
+      if (model && modelJsonBlock) {
+        modelJsonBlock.textContent = JSON.stringify(model, null, 2);
+        if (modelJsonBlock.style.display === "none") {
+          modelJsonBlock.style.display = "block";
+          showModelBtn.textContent = "Hide Model JSON";
+        } else {
+          modelJsonBlock.style.display = "none";
+          showModelBtn.textContent = "Show Model JSON";
+        }
+      }
+    }
+
+    function renderParamFilters() {
+      const vendorFilters = getElement("vendorFilters");
+      vendorFilters.innerHTML = vendors.map(vendor =>
+        `<span class="filter-item">
+      <input type="checkbox" class="vendor-filter" data-group="vendor" value="${vendor}" checked>
+      <span>${vendor}</span>
+    </span>`
+      ).join(" ");
+      const tagFilters = getElement("tagFilters");
+      tagFilters.innerHTML = tags.map(tag =>
+        `<span class="filter-item">
+      <input type="checkbox" class="tag-filter" data-group="tag" value="${tag}" checked>
+      <span>${tag}</span>
+    </span>`
+      ).join(" ");
+
+      const paramFilters = getElement("paramFilters");
+      paramFilters.innerHTML = parameters.map(param =>
+        `<span class="filter-item">
+      <input type="checkbox" class="param-filter" data-group="param" value="${param.label}" checked>
+      <span>${param.label}</span>
+    </span>`
+      ).join(" ");
+    }
+
+    function cbOnChange() {
+      const vendorValues = Array.from(document.querySelectorAll('.vendor-filter')).map(cb => {return { vendor: cb.value, checked: cb.checked }});
+      const tagValues = Array.from(document.querySelectorAll('.tag-filter')).map(cb => {return { vendor: cb.value, checked: cb.checked }});
+      const paramValues = Array.from(document.querySelectorAll('.param-filter')).map(cb => {return { vendor: cb.value, checked: cb.checked }});
+
+      displayModels = models.filter(model => {
+        const vendorMatch = vendorValues.some(v => v.checked && model.vendorSlug === v.vendor);
+        const tagMatch = tagValues.some(t => t.checked && model.tag === t.vendor);
+        const paramMatch = paramValues.some(p => p.checked && (model.supported_parameters || []).includes(p.vendor));
+        return vendorMatch || tagMatch || paramMatch;
+      });
+
+      // if currentModelId is not exisits in the new displayModels,
+      // then set currentModelId to the first model in displayModels
+      if (!displayModels.some(m => m.id === currentModelId)) {
+        currentModelId = displayModels.length > 0 ? displayModels[0].id : "";
+      }
+      renderModels();
+    }
+    // --- Initialization ---
+    async function initialize() {
+      await loadModels();
+      updateParameterFields();
+      renderParamFilters();
+
+      initializeSpeechRecognition();
+      initializeSpeechSynthesis();
+
+      getElement("parameters").style.display = "none";
+      getElement("sendButton").addEventListener("click", handleSend);
+      getElement("userInput").addEventListener("keydown", e => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          handleSend();
+        }
+      });
+      getElement("modelSelect").addEventListener("change", handleModelChange);
+      getElement("toggleParams").addEventListener("click", handleToggleParams);
+      getElement("toggleFilters").addEventListener("click", handleToggleFilters);
+      getElement("clearParamsBtn").addEventListener("click", handleClearParams);
+      getElement("showModelBtn").addEventListener("click", handleShowModelJson);
+      
+      getElement("startSpeechBtn").addEventListener("click", handleStartStopSpeech);
+
+
+      document.querySelectorAll('.filter-item input[type="checkbox"]').forEach(cb => {
+        cb.onchange = cbOnChange;
+      });
+      getElement("clearFiltersBtn").addEventListener("click", () => {
+        document.querySelectorAll('.filter-item input[type="checkbox"]').forEach(cb => {
+          cb.checked = false;
+        });
+        cbOnChange(); // Trigger update
+      });
+      getElement("checkAllFiltersBtn").addEventListener("click", () => {
+        document.querySelectorAll('.filter-item input[type="checkbox"]').forEach(cb => {
+          cb.checked = true;
+        });
+        cbOnChange(); // Trigger update
+      });
+    }
+
+    window.addEventListener("load", initialize);
+  </script>
+</body>
+
+</html>
