@@ -127,6 +127,72 @@
         max-width: 150px; /* Limit width of language selectors */
     }
 
+    /* Code snippet styles */
+    .code-snippet {
+      position: relative;
+      /* margin: 10px 0; */
+      border: 1px solid #ccc;
+      /* border-radius: 5px; */
+      overflow: hidden;
+
+      max-height: 400px; /* Limit height of code blocks */
+      overflow-y: scroll;
+    }
+
+    .code-header {
+      /* background: #f5f5f5; */
+      padding: 8px 12px;
+      /* border-bottom: 1px solid #ccc; */
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .code-language {
+      font-weight: bold;
+      font-size: 0.9em;
+    }
+
+    .code-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .code-btn {
+      /* background: #007acc; */
+      /* color: white; */
+      /* border: none; */
+      /* padding: 4px 8px; */
+      /* border-radius: 3px; */
+      cursor: pointer;
+      /* font-size: 0.8em; */
+    }
+
+    .code-btn:hover {
+      /* background: #005c99; */
+    }
+
+    .code-content {
+      padding: 12px;
+      background: #f8f8f8;
+      /* font-family: 'Courier New', monospace; */
+      overflow-x: auto;
+      white-space: pre;
+    }
+
+    .code-content.collapsed {
+      display: none;
+    }
+
+    .expand-icon {
+      transition: transform 0.2s;
+    }
+
+    .expand-icon.collapsed {
+      transform: rotate(-90deg);
+    }
 
     @media (max-width: 600px) {
 
@@ -417,6 +483,81 @@
       });
     }
 
+    // --- Code snippet processing ---
+    function processCodeBlocks(content) {
+      const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
+      let processedContent = content;
+      const codeBlocks = [];
+      let match;
+
+      while ((match = codeBlockRegex.exec(content)) !== null) {
+        const language = match[1] || 'text';
+        const code = match[2];
+        const blockId = `code-block-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        
+        codeBlocks.push({
+          id: blockId,
+          language: language,
+          code: code,
+          fullMatch: match[0]
+        });
+      }
+
+      codeBlocks.forEach((block, index) => {
+        const placeholder = `__CODE_BLOCK_${index}__`;
+        processedContent = processedContent.replace(block.fullMatch, placeholder);
+      });
+
+      return { processedContent, codeBlocks };
+    }
+
+    function createCodeSnippet(block) {
+      return `
+        <div class="code-snippet" data-block-id="${block.id}">
+          <div class="code-header" onclick="toggleCodeBlock('${block.id}')">
+            <span class="code-language">${block.language}</span>
+            <div class="code-actions">
+              <button class="code-btn" onclick="copyCode('${block.id}', event)">Copy</button>
+              <span class="expand-icon">▼</span>
+            </div>
+          </div>
+          <div class="code-content" id="${block.id}">${escapeHtml(block.code)}</div>
+        </div>
+      `;
+    }
+
+    function toggleCodeBlock(blockId) {
+      const content = document.getElementById(blockId);
+      const icon = document.querySelector(`[data-block-id="${blockId}"] .expand-icon`);
+      
+      if (content && icon) {
+        content.classList.toggle('collapsed');
+        icon.classList.toggle('collapsed');
+        icon.textContent = content.classList.contains('collapsed') ? '▶' : '▼';
+      }
+    }
+
+    function copyCode(blockId, event) {
+      event.stopPropagation();
+      const content = document.getElementById(blockId);
+      if (content) {
+        navigator.clipboard.writeText(content.textContent).then(() => {
+          const button = event.target;
+          const originalText = button.textContent;
+          button.textContent = 'Copied!';
+          setTimeout(() => {
+            button.textContent = originalText;
+          }, 1000);
+        }).catch(err => {
+          console.error('Failed to copy code:', err);
+        });
+      }
+    }
+
+    // Make functions global for onclick handlers
+    window.toggleCodeBlock = toggleCodeBlock;
+    window.copyCode = copyCode;
+
     // --- Rendering ---
     function renderChat() {
       const out = getElement("chatOutput");
@@ -426,7 +567,15 @@
         } else if (m.role === "assistant_thinking") {
           return `<div class="thinking">${escapeHtml(m.content)}</div>`;
         } else {
-          return `<b>${escapeHtml(m.modelId)}</b>: ${escapeHtml(m.content)}`;
+          const { processedContent, codeBlocks } = processCodeBlocks(m.content);
+          let renderedContent = escapeHtml(processedContent);
+          
+          codeBlocks.forEach((block, index) => {
+            const placeholder = `__CODE_BLOCK_${index}__`;
+            renderedContent = renderedContent.replace(placeholder, createCodeSnippet(block));
+          });
+          
+          return `<b>${escapeHtml(m.modelId)}</b>: ${renderedContent}`;
         }
       }).join("\n\n");
       out.scrollTop = out.scrollHeight;
