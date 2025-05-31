@@ -63,7 +63,8 @@
       display: flex;
       align-items: center;
       gap: 8px;
-      flex-wrap: wrap; /* Allow wrapping for smaller screens */
+      flex-wrap: wrap;
+      /* Allow wrapping for smaller screens */
     }
 
     #modelSelect {
@@ -82,8 +83,9 @@
       width: 100%;
       box-sizing: border-box;
     }
+
     #userInput.speaking-interim {
-        color: gray;
+      color: gray;
     }
 
     #bottom {
@@ -91,7 +93,8 @@
       display: flex;
       align-items: center;
       gap: 8px;
-      flex-wrap: wrap; /* Allow wrapping for smaller screens */
+      flex-wrap: wrap;
+      /* Allow wrapping for smaller screens */
     }
 
     #fileInput {
@@ -111,6 +114,7 @@
     .filtersBlock {
       margin-top: 16px;
     }
+
     .filter-item {
       display: inline-block;
       margin-right: 12px;
@@ -118,13 +122,15 @@
 
     /* Small controls for speech */
     .speech-control {
-        /* padding: 6px 10px; */
-        /* font-size: 0.9em; */
+      /* padding: 6px 10px; */
+      /* font-size: 0.9em; */
     }
+
     .speech-select {
-        /* padding: 5px; */
-        /* font-size: 0.9em; */
-        max-width: 150px; /* Limit width of language selectors */
+      /* padding: 5px; */
+      /* font-size: 0.9em; */
+      max-width: 150px;
+      /* Limit width of language selectors */
     }
 
 
@@ -161,14 +167,19 @@
       .parameter label {
         min-width: 0;
       }
+
       .speech-select {
-          max-width: none; /* Remove max-width on small screens */
-          width: 100%; /* Make selects take full width if they wrap */
-          margin-top: 4px;
+        max-width: none;
+        /* Remove max-width on small screens */
+        width: 100%;
+        /* Make selects take full width if they wrap */
+        margin-top: 4px;
       }
+
       .speech-control {
-          width: 100%; /* Make buttons take full width if they wrap */
-          margin-top: 4px;
+        width: 100%;
+        /* Make buttons take full width if they wrap */
+        margin-top: 4px;
       }
     }
   </style>
@@ -349,13 +360,13 @@
     let voices = [];
     let isRecognizing = false;
     const recognitionLanguages = [
-        { code: 'en-US', name: 'English (US)' },
-        { code: 'ru-RU', name: 'Русский (Россия)' },
-        { code: 'es-ES', name: 'Español (España)' },
-        { code: 'fr-FR', name: 'Français (France)' },
-        { code: 'de-DE', name: 'Deutsch (Deutschland)' },
-        { code: 'ja-JP', name: '日本語 (日本)' },
-        { code: 'zh-CN', name: '中文 (中国)' }
+      { code: 'en-US', name: 'English (US)' },
+      { code: 'ru-RU', name: 'Русский (Россия)' },
+      { code: 'es-ES', name: 'Español (España)' },
+      { code: 'fr-FR', name: 'Français (France)' },
+      { code: 'de-DE', name: 'Deutsch (Deutschland)' },
+      { code: 'ja-JP', name: '日本語 (日本)' },
+      { code: 'zh-CN', name: '中文 (中国)' }
     ];
 
 
@@ -430,7 +441,7 @@
           const tokens = marked.lexer(m.content);
           const processedTokens = tokens.map((token) => {
             if (token.type === 'code') {
-              const id = crypto.randomUUID();
+              const id = generateUUID();
               return `<span style="cursor:pointer" onclick="copyText('${id}')">⧉</span><span style="cursor:pointer" id="${id}-trigger" onclick="collapse('${id}')">▲</span><span id="${id}">${escapeHtml(token.raw)}</span>`;
             }
             return escapeHtml(token.raw);
@@ -439,6 +450,14 @@
         }
       }).join("\n\n");
       out.scrollTop = out.scrollHeight;
+    }
+
+    function generateUUID() {
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+        const r = Math.random() * 16 | 0;
+        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+      });
     }
 
     function copyText(id) {
@@ -541,176 +560,176 @@
 
     // --- Speech Recognition ---
     function initializeSpeechRecognition() {
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SpeechRecognition) {
-            console.warn("Speech Recognition API not supported by this browser.");
-            getElement("startSpeechBtn").disabled = true;
-            getElement("speechLangSelect").disabled = true;
-            return;
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        console.warn("Speech Recognition API not supported by this browser.");
+        getElement("startSpeechBtn").disabled = true;
+        getElement("speechLangSelect").disabled = true;
+        return;
+      }
+      recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+
+      const speechLangSelect = getElement("speechLangSelect");
+      recognitionLanguages.forEach(lang => {
+        const option = document.createElement('option');
+        option.value = lang.code;
+        option.textContent = lang.name;
+        speechLangSelect.appendChild(option);
+      });
+      recognition.lang = speechLangSelect.value || 'en-US';
+
+      speechLangSelect.onchange = () => {
+        recognition.lang = speechLangSelect.value;
+      };
+
+      recognition.onstart = () => {
+        isRecognizing = true;
+        getElement("startSpeechBtn").textContent = '🛑';
+        getElement("userInput").value = '';
+        getElement("userInput").placeholder = 'Listening...';
+        getElement("userInput").classList.add('speaking-interim');
+      };
+
+      recognition.onresult = (event) => {
+        let interimTranscript = '';
+        let finalTranscript = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          const transcriptPart = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalTranscript += transcriptPart;
+          } else {
+            interimTranscript += transcriptPart;
+          }
         }
-        recognition = new SpeechRecognition();
-        recognition.continuous = false;
-        recognition.interimResults = true;
+        getElement("userInput").value = finalTranscript + interimTranscript;
+        if (finalTranscript) {
+          getElement("userInput").classList.remove('speaking-interim');
+        } else {
+          getElement("userInput").classList.add('speaking-interim');
+        }
+      };
 
-        const speechLangSelect = getElement("speechLangSelect");
-        recognitionLanguages.forEach(lang => {
-            const option = document.createElement('option');
-            option.value = lang.code;
-            option.textContent = lang.name;
-            speechLangSelect.appendChild(option);
-        });
-        recognition.lang = speechLangSelect.value || 'en-US';
+      recognition.onerror = (event) => {
+        console.error("Speech recognition error:", event.error);
+        if (event.error === 'no-speech' || event.error === 'audio-capture' || event.error === 'not-allowed') {
+          // These errors often stop recognition, so call onend behavior.
+          recognition.onend(); // Manually trigger onend visuals if not already done.
+        }
+      };
 
-        speechLangSelect.onchange = () => {
-            recognition.lang = speechLangSelect.value;
-        };
-
-        recognition.onstart = () => {
-            isRecognizing = true;
-            getElement("startSpeechBtn").textContent = '🛑';
-            getElement("userInput").value = '';
-            getElement("userInput").placeholder = 'Listening...';
-            getElement("userInput").classList.add('speaking-interim');
-        };
-
-        recognition.onresult = (event) => {
-            let interimTranscript = '';
-            let finalTranscript = '';
-            for (let i = event.resultIndex; i < event.results.length; ++i) {
-                const transcriptPart = event.results[i][0].transcript;
-                if (event.results[i].isFinal) {
-                    finalTranscript += transcriptPart;
-                } else {
-                    interimTranscript += transcriptPart;
-                }
-            }
-            getElement("userInput").value = finalTranscript + interimTranscript;
-            if (finalTranscript) {
-                getElement("userInput").classList.remove('speaking-interim');
-            } else {
-                getElement("userInput").classList.add('speaking-interim');
-            }
-        };
-
-        recognition.onerror = (event) => {
-            console.error("Speech recognition error:", event.error);
-            if (event.error === 'no-speech' || event.error === 'audio-capture' || event.error === 'not-allowed') {
-                // These errors often stop recognition, so call onend behavior.
-                recognition.onend(); // Manually trigger onend visuals if not already done.
-            }
-        };
-
-        recognition.onend = () => {
-            isRecognizing = false;
-            getElement("startSpeechBtn").textContent = '🎤';
-            getElement("userInput").classList.remove('speaking-interim');
-            if (getElement("userInput").value.trim() === '') {
-                getElement("userInput").placeholder = "Type your message...";
-            }
-        };
+      recognition.onend = () => {
+        isRecognizing = false;
+        getElement("startSpeechBtn").textContent = '🎤';
+        getElement("userInput").classList.remove('speaking-interim');
+        if (getElement("userInput").value.trim() === '') {
+          getElement("userInput").placeholder = "Type your message...";
+        }
+      };
     }
 
     function handleStartStopSpeech() {
-        if (!recognition) return;
-        if (isRecognizing) {
-            recognition.stop();
-        } else {
-            try {
-                recognition.start();
-            } catch (e) {
-                console.error("Error starting recognition:", e);
-                alert("Could not start voice recognition. It might already be active or there was an issue.");
-                // Reset UI in case of error during start
-                isRecognizing = false;
-                getElement("startSpeechBtn").textContent = '🎤';
-                getElement("userInput").classList.remove('speaking-interim');
-                getElement("userInput").placeholder = "Type your message...";
-            }
+      if (!recognition) return;
+      if (isRecognizing) {
+        recognition.stop();
+      } else {
+        try {
+          recognition.start();
+        } catch (e) {
+          console.error("Error starting recognition:", e);
+          alert("Could not start voice recognition. It might already be active or there was an issue.");
+          // Reset UI in case of error during start
+          isRecognizing = false;
+          getElement("startSpeechBtn").textContent = '🎤';
+          getElement("userInput").classList.remove('speaking-interim');
+          getElement("userInput").placeholder = "Type your message...";
         }
+      }
     }
 
     // --- Speech Synthesis ---
     function populateVoiceList() {
-        if (!synth) return;
-        voices = synth.getVoices().sort((a, b) => {
-            const aname = a.name.toUpperCase();
-            const bname = b.name.toUpperCase();
-            if (aname < bname) return -1;
-            if (aname > bname) return 1;
-            return 0;
-        });
+      if (!synth) return;
+      voices = synth.getVoices().sort((a, b) => {
+        const aname = a.name.toUpperCase();
+        const bname = b.name.toUpperCase();
+        if (aname < bname) return -1;
+        if (aname > bname) return 1;
+        return 0;
+      });
 
-        const synthLangSelect = getElement("synthLangSelect");
-        const previouslySelected = synthLangSelect.value;
-        synthLangSelect.innerHTML = '';
+      const synthLangSelect = getElement("synthLangSelect");
+      const previouslySelected = synthLangSelect.value;
+      synthLangSelect.innerHTML = '';
 
-        voices.forEach(voice => {
-            const option = document.createElement('option');
-            option.textContent = `${voice.name} (${voice.lang})`;
-            option.setAttribute('data-lang', voice.lang);
-            option.setAttribute('data-name', voice.name);
-            option.value = voice.name; // Use voice.name as value for simplicity
-            synthLangSelect.appendChild(option);
-        });
-        
-        if (previouslySelected) {
-            synthLangSelect.value = previouslySelected;
-        }
-        if (synthLangSelect.selectedIndex < 0 && voices.length > 0) {
-            // Try to pick a default english voice if available
-            let defaultVoice = voices.find(v => v.lang.startsWith('en') && v.default);
-            if (!defaultVoice) defaultVoice = voices.find(v => v.lang.startsWith('en'));
-            if (!defaultVoice && voices.length > 0) defaultVoice = voices[0];
-            if (defaultVoice) synthLangSelect.value = defaultVoice.name;
-        }
+      voices.forEach(voice => {
+        const option = document.createElement('option');
+        option.textContent = `${voice.name} (${voice.lang})`;
+        option.setAttribute('data-lang', voice.lang);
+        option.setAttribute('data-name', voice.name);
+        option.value = voice.name; // Use voice.name as value for simplicity
+        synthLangSelect.appendChild(option);
+      });
+
+      if (previouslySelected) {
+        synthLangSelect.value = previouslySelected;
+      }
+      if (synthLangSelect.selectedIndex < 0 && voices.length > 0) {
+        // Try to pick a default english voice if available
+        let defaultVoice = voices.find(v => v.lang.startsWith('en') && v.default);
+        if (!defaultVoice) defaultVoice = voices.find(v => v.lang.startsWith('en'));
+        if (!defaultVoice && voices.length > 0) defaultVoice = voices[0];
+        if (defaultVoice) synthLangSelect.value = defaultVoice.name;
+      }
     }
 
     function initializeSpeechSynthesis() {
-        if (!synth) {
-            console.warn("Speech Synthesis API not supported by this browser.");
-            getElement("speakResponseBtn").disabled = true;
-            getElement("stopSpeechBtn").disabled = true;
-            getElement("synthLangSelect").disabled = true;
-            return;
-        }
-        populateVoiceList();
-        if (speechSynthesis.onvoiceschanged !== undefined) {
-            speechSynthesis.onvoiceschanged = populateVoiceList;
-        }
+      if (!synth) {
+        console.warn("Speech Synthesis API not supported by this browser.");
+        getElement("speakResponseBtn").disabled = true;
+        getElement("stopSpeechBtn").disabled = true;
+        getElement("synthLangSelect").disabled = true;
+        return;
+      }
+      populateVoiceList();
+      if (speechSynthesis.onvoiceschanged !== undefined) {
+        speechSynthesis.onvoiceschanged = populateVoiceList;
+      }
 
-        getElement("speakResponseBtn").onclick = handleSpeakResponse;
-        getElement("stopSpeechBtn").onclick = () => {
-            synth.cancel();
-        };
+      getElement("speakResponseBtn").onclick = handleSpeakResponse;
+      getElement("stopSpeechBtn").onclick = () => {
+        synth.cancel();
+      };
     }
 
     function handleSpeakResponse() {
-        if (synth.speaking) {
-            synth.cancel(); // Stop current and speak new, or just stop then require another click? For now, simple stop existing.
-        }
-        const lastAssistantMessage = displayMessages.slice().reverse().find(m => m.role === 'assistant' && m.content);
-        if (lastAssistantMessage && lastAssistantMessage.content) {
-            const utterance = new SpeechSynthesisUtterance(lastAssistantMessage.content);
-            const selectedVoiceName = getElement("synthLangSelect").value;
-            const selectedVoice = voices.find(v => v.name === selectedVoiceName);
+      if (synth.speaking) {
+        synth.cancel(); // Stop current and speak new, or just stop then require another click? For now, simple stop existing.
+      }
+      const lastAssistantMessage = displayMessages.slice().reverse().find(m => m.role === 'assistant' && m.content);
+      if (lastAssistantMessage && lastAssistantMessage.content) {
+        const utterance = new SpeechSynthesisUtterance(lastAssistantMessage.content);
+        const selectedVoiceName = getElement("synthLangSelect").value;
+        const selectedVoice = voices.find(v => v.name === selectedVoiceName);
 
-            if (selectedVoice) {
-                utterance.voice = selectedVoice;
-                utterance.lang = selectedVoice.lang; // Ensure lang is correctly set from voice
-            } else if (voices.length > 0) {
-                 // Fallback if selection weirdly fails
-                utterance.voice = voices[0];
-                utterance.lang = voices[0].lang;
-            }
-            // Add error handling for utterance
-            utterance.onerror = (event) => {
-                console.error('SpeechSynthesisUtterance.onerror', event);
-                alert(`Error speaking: ${event.error}`);
-            };
-            synth.speak(utterance);
-        } else {
-            alert("No assistant response to speak yet or response is empty.");
+        if (selectedVoice) {
+          utterance.voice = selectedVoice;
+          utterance.lang = selectedVoice.lang; // Ensure lang is correctly set from voice
+        } else if (voices.length > 0) {
+          // Fallback if selection weirdly fails
+          utterance.voice = voices[0];
+          utterance.lang = voices[0].lang;
         }
+        // Add error handling for utterance
+        utterance.onerror = (event) => {
+          console.error('SpeechSynthesisUtterance.onerror', event);
+          alert(`Error speaking: ${event.error}`);
+        };
+        synth.speak(utterance);
+      } else {
+        alert("No assistant response to speak yet or response is empty.");
+      }
     }
 
 
@@ -799,9 +818,9 @@
           }
 
           if (displayMessages.at(-1)?.role === "assistant") {
-             displayMessages.at(-1).content = full;
+            displayMessages.at(-1).content = full;
           } else if (full) { // Only push if there's content
-             displayMessages.push({ role: "assistant", content: full, modelId: currentModelId });
+            displayMessages.push({ role: "assistant", content: full, modelId: currentModelId });
           }
         } else {
           const data = await res.json();
@@ -816,8 +835,8 @@
           }
         }
       } catch (error) {
-          console.error("Fetch error:", error);
-          displayMessages.push({ role: "assistant", content: `Error: ${error.message}`, modelId: currentModelId });
+        console.error("Fetch error:", error);
+        displayMessages.push({ role: "assistant", content: `Error: ${error.message}`, modelId: currentModelId });
       }
       renderChat();
     }
@@ -903,9 +922,9 @@
     }
 
     function cbOnChange() {
-      const vendorValues = Array.from(document.querySelectorAll('.vendor-filter')).map(cb => {return { vendor: cb.value, checked: cb.checked }});
-      const tagValues = Array.from(document.querySelectorAll('.tag-filter')).map(cb => {return { vendor: cb.value, checked: cb.checked }});
-      const paramValues = Array.from(document.querySelectorAll('.param-filter')).map(cb => {return { vendor: cb.value, checked: cb.checked }});
+      const vendorValues = Array.from(document.querySelectorAll('.vendor-filter')).map(cb => { return { vendor: cb.value, checked: cb.checked } });
+      const tagValues = Array.from(document.querySelectorAll('.tag-filter')).map(cb => { return { vendor: cb.value, checked: cb.checked } });
+      const paramValues = Array.from(document.querySelectorAll('.param-filter')).map(cb => { return { vendor: cb.value, checked: cb.checked } });
 
       displayModels = models.filter(model => {
         const vendorMatch = vendorValues.some(v => v.checked && model.vendorSlug === v.vendor);
@@ -943,7 +962,7 @@
       getElement("toggleFilters").addEventListener("click", handleToggleFilters);
       getElement("clearParamsBtn").addEventListener("click", handleClearParams);
       getElement("showModelBtn").addEventListener("click", handleShowModelJson);
-      
+
       getElement("startSpeechBtn").addEventListener("click", handleStartStopSpeech);
 
 
