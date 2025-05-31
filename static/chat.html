@@ -6,11 +6,11 @@
 </head>
 
 <body>
-    <select id="models"></select>
+    <select id="models" disabled></select>
     <div id="messages"></div>
-    <textarea id="prompt" rows="4"></textarea>
-    <input id="files" type="file" multiple accept="image/*,.pdf">
-    <input id="stream" type="checkbox" checked>
+    <textarea id="prompt" rows="4" disabled></textarea>
+    <input id="files" type="file" multiple accept="image/*,.pdf" disabled>
+    <input id="stream" type="checkbox" checked disabled>
     <button id="send" disabled>Send</button>
 
     <script>
@@ -18,14 +18,13 @@
 
         let models = [];
         let chat = {
-            completions: [],
-            // messages: [],
+            completions: []
         }
 
         let model = "anthropic/claude-sonnet-4";
         let stream = true;
 
-        // ...
+        // interface
         function onModelChange(event) {
             model = event.target.value;
             // ...
@@ -83,63 +82,64 @@
             return files;
         }
 
-
-
-        function createInitialCompletion(model, text, files = []) {
-            let content;
-            if (files.length > 0) {
-                content = [];
-                for (const file of files) {
-                    if (file.type.startsWith("image/")) {
-                        content.push({
-                            type: "image_url",
-                            image_url: {
-                                url: file.data,
-                            }
-                        });
-                    }
-                    else if (file.type === "application/pdf") {
-                        content.push({
-                            type: "file",
-                            file: {
-                                file_data: file.data,
-                                filename: file.name
-                            }
-                        });
-                    }
-                };
-                content.push({
-                    type: "text",
-                    text: text
-                });
-            } else {
-                content = text;
-            }
-            let message = {
-                role: "user",
-                content: content
-            };
-            let completion = {
-                body: {
-                    model: model,
-                    stream: stream,
-                    messages: [message]
-                },
-                contents: [],
-                reasonings: [],
-                reasoning: "",
-            };
-            return completion;
-        }
-
         async function complete() {
+            document.getElementById("send").disabled = true;
             try {
                 let text = readText();
                 let files = await readFiles();
-                let completion = createInitialCompletion(model, text, files);
-                let message = {
-                    role: "user",
-                    content: text
+
+                let content;
+                if (files.length > 0) {
+                    content = [];
+                    for (const file of files) {
+                        if (file.type.startsWith("image/")) {
+                            content.push({
+                                type: "image_url",
+                                image_url: {
+                                    url: file.data,
+                                }
+                            });
+                        }
+                        else if (file.type === "application/pdf") {
+                            content.push({
+                                type: "file",
+                                file: {
+                                    file_data: file.data,
+                                    filename: file.name
+                                }
+                            });
+                        }
+                    };
+                    content.push({
+                        type: "text",
+                        text: text
+                    });
+                } else {
+                    content = text;
+                }
+                let messages;
+                if (chat.completions.length > 0) {
+                    messages = chat.completions[chat.completions.length - 1].body.messages;
+                    messages.push({
+                        role: "user",
+                        content: content
+                    });
+                } else {
+                    messages = [{
+                        role: "user",
+                        content: content
+                    }];
+                }
+                let completion = {
+                    body: { model, stream, messages },
+                    contents: [],
+                    reasonings: [],
+                    reasoning: "",
+                };
+
+                let assistantMessage = {
+                    role: "assistant",
+                    content: "",
                 };
                 const response = await fetch(`${API_URL}/chat/completions`, {
                     method: "POST",
@@ -170,22 +170,28 @@
                                         try {
                                             const data = JSON.parse(dataString);
                                             if (data.choices && data.choices.length > 0) {
-                                                for (const choice of data.choices) {
+                                                for (let i = 0; i < data.choices.length; i++) {
+                                                    if (i > 0) {
+                                                        console.warn(i);
+                                                    }
+                                                    const choice = data.choices[i];
                                                     if (choice?.finish_reason === "stop" || choice?.native_finish_reason === "stop") {
                                                         console.warn(choice);
-                                                        // ...
+                                                        // ?
                                                     }
                                                     if (choice?.delta) {
                                                         if (choice.delta.reasoning) {
                                                             completion.reasonings.push(data);
                                                             completion.reasoning += choice.delta.reasoning;
+                                                            // render reasoning
                                                         }
                                                         if (choice.delta.content) {
                                                             completion.contents.push(data);
-                                                            message.content += choice.delta.content;
+                                                            assistantMessage.content += choice.delta.content;
+                                                            // render message
                                                         } else {
                                                             console.warn(choice.delta);
-                                                            // ...
+                                                            // ?
                                                         }
                                                     } else {
                                                         console.warn(choice);
@@ -226,24 +232,57 @@
                             }
                         }
                     }
-                    completion.body.messages.push(message);
+                    completion.body.messages.push(assistantMessage);
                     chat.completions.push(completion);
-                    console.log(completion);
                 } else {
                     const data = await response.json();
                     if (response.ok && data && data.choices && data.choices.length > 0) {
-                        console.log(JSON.stringify(data, null, 2));
-
-                        for (const choice of data.choices) {
+                        for (let i = 0; i < data.choices.length; i++) {
+                            if (i > 0) {
+                                console.warn(i);
+                            }
                             completion.contents.push(data);
-                            message.content += choice.message.content;
+                            assistantMessage.content += data.choices[i].message.content;
                         }
-                        completion.body.messages.push(message);
+                        completion.body.messages.push(assistantMessage);
                         chat.completions.push(completion);
                     } else {
                         throw new Error();
                     }
                 }
+                // clear input
+                document.getElementById("prompt").value = "";
+                document.getElementById("files").value = "";
+                document.getElementById("send").disabled = false;
+                // render messages
+                console.log(chat);
+                const messagesElement = document.getElementById("messages");
+                const messageDiv = document.createElement("div");
+                messageDiv.className = "message";
+                messageDiv.innerHTML = `<strong>User:</strong> ${text}<br>`;
+                if (files.length > 0) {
+                    for (const file of files) {
+                        if (file.type.startsWith("image/")) {
+                            const img = document.createElement("img");
+                            img.src = file.data;
+                            img.alt = file.name;
+                            img.style.maxWidth = "100%";
+                            messageDiv.appendChild(img);
+                        } else if (file.type === "application/pdf") {
+                            const link = document.createElement("a");
+                            link.href = file.data;
+                            link.textContent = file.name;
+                            link.target = "_blank";
+                            messageDiv.appendChild(link);
+                        }
+                    }
+                }
+                messagesElement.appendChild(messageDiv);
+                const assistantDiv = document.createElement("div");
+                assistantDiv.className = "message assistant";
+                assistantDiv.innerHTML = `<strong>Assistant:</strong> ${assistantMessage.content}`;
+                messagesElement.appendChild(assistantDiv);
+                messagesElement.scrollTop = messagesElement.scrollHeight;
             } catch (error) {
                 console.error(error);
             }
@@ -274,6 +313,14 @@
             });
         }
 
+        function enableInputs() {
+            document.getElementById("models").disabled = false;
+            document.getElementById("prompt").disabled = false;
+            document.getElementById("files").disabled = false;
+            document.getElementById("stream").disabled = false;
+            document.getElementById("send").disabled = false;
+        }
+        
         async function initialize() {
             document.getElementById("models").addEventListener("change", onModelChange);
             document.getElementById("prompt").addEventListener("input", onPromptInput);
@@ -281,6 +328,7 @@
             document.getElementById("send").addEventListener("click", complete);
             models = await fetchModels();
             renderModels(model);
+            enableInputs();
         }
 
         window.addEventListener("load", initialize);
