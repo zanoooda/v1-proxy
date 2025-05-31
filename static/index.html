@@ -442,7 +442,7 @@
           const processedTokens = tokens.map((token) => {
             if (token.type === 'code') {
               const id = generateUUID();
-              return `<span style="cursor:pointer" onclick="copyText('${id}')">⧉</span><span style="cursor:pointer" id="${id}-trigger" onclick="collapse('${id}')">▲</span><span id="${id}">${escapeHtml(token.raw)}</span>`;
+              return `<span style="cursor:pointer;" onclick="copyText('${id}')">⧉</span><span style="cursor:pointer;" id="${id}-trigger" onclick="collapse('${id}')">▲</span><span id="${id}">${escapeHtml(token.raw)}</span>`;
             }
             return escapeHtml(token.raw);
           }).join("");
