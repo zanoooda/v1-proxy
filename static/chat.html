@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>Chat</title>
+</head>
+
+<body>
+    <select id="models"></select>
+    <div id="messages"></div>
+    <textarea id="prompt" rows="4"></textarea>
+    <input id="files" type="file" multiple accept="image/*,.pdf">
+    <input id="stream" type="checkbox" checked>
+    <button id="send" disabled>Send</button>
+
+    <script>
+        const API_URL = "/api-v1";
+
+        let models = [];
+        let chat = {
+            completions: [],
+            // messages: [],
+        }
+
+        let model = "anthropic/claude-sonnet-4";
+        let stream = true;
+
+        // ...
+        function onModelChange(event) {
+            model = event.target.value;
+            // ...
+        }
+
+        function onPromptInput(event) {
+            const prompt = event.target.value;
+            document.getElementById("send").disabled = !prompt.trim();
+        }
+
+        function onStreamChange(event) {
+            stream = event.target.checked;
+        }
+
+        // chat/completions
+        function readText() {
+            const value = document.getElementById("prompt").value;
+            const text = value.trim();
+            if (!text) {
+                throw new Error();
+            }
+            return text;
+        }
+
+        async function readFiles() {
+            let files = [];
+            for (const file of document.getElementById("files").files) {
+                if (file.type.startsWith("image/") || file.type == "application/pdf") {
+                    try {
+                        const data = await new Promise((resolve, reject) => {
+                            const reader = new FileReader();
+                            reader.onload = function (event) {
+                                resolve(event.target.result);
+                            };
+                            reader.onerror = function (event) {
+                                reject();
+                            };
+                            reader.readAsDataURL(file);
+                        });
+                        if (data) {
+                            files.push({
+                                type: file.type,
+                                name: file.name,
+                                data: data
+                            });
+                        }
+                    } catch (error) {
+                        console.error(error);
+                    }
+                } else {
+                    console.warn(file.type);
+                    continue;
+                }
+            }
+            return files;
+        }
+
+
+
+        function createInitialCompletion(model, text, files = []) {
+            let content;
+            if (files.length > 0) {
+                content = [];
+                for (const file of files) {
+                    if (file.type.startsWith("image/")) {
+                        content.push({
+                            type: "image_url",
+                            image_url: {
+                                url: file.data,
+                            }
+                        });
+                    }
+                    else if (file.type === "application/pdf") {
+                        content.push({
+                            type: "file",
+                            file: {
+                                file_data: file.data,
+                                filename: file.name
+                            }
+                        });
+                    }
+                };
+                content.push({
+                    type: "text",
+                    text: text
+                });
+            } else {
+                content = text;
+            }
+            let message = {
+                role: "user",
+                content: content
+            };
+            let completion = {
+                body: {
+                    model: model,
+                    stream: stream,
+                    messages: [message]
+                },
+                contents: [],
+                reasonings: [],
+                reasoning: "",
+            };
+            return completion;
+        }
+
+        async function complete() {
+            try {
+                let text = readText();
+                let files = await readFiles();
+                let completion = createInitialCompletion(model, text, files);
+                let message = {
+                    role: "user",
+                    content: text
+                };
+                const response = await fetch(`${API_URL}/chat/completions`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(completion.body)
+                });
+                if (response.headers.get("content-type")?.startsWith("text/event-stream")) {
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+                    let done = false;
+                    while (!done) {
+                        const { value, done: doneReading } = await reader.read();
+                        done = doneReading;
+                        if (done) {
+                            break;
+                        }
+                        const chunk = decoder.decode(value, { stream: true });
+                        const lines = chunk.split('\n');
+                        for (const line of lines) {
+                            if (line) {
+                                if (line.startsWith('data:')) {
+                                    const dataString = line.slice(5).trim();
+                                    if (dataString && dataString === '[DONE]') {
+                                        done = true;
+                                    } else {
+                                        try {
+                                            const data = JSON.parse(dataString);
+                                            if (data.choices && data.choices.length > 0) {
+                                                for (const choice of data.choices) {
+                                                    if (choice?.finish_reason === "stop" || choice?.native_finish_reason === "stop") {
+                                                        console.warn(choice);
+                                                        // ...
+                                                    }
+                                                    if (choice?.delta) {
+                                                        if (choice.delta.reasoning) {
+                                                            completion.reasonings.push(data);
+                                                            completion.reasoning += choice.delta.reasoning;
+                                                        }
+                                                        if (choice.delta.content) {
+                                                            completion.contents.push(data);
+                                                            message.content += choice.delta.content;
+                                                        } else {
+                                                            console.warn(choice.delta);
+                                                            // ...
+                                                        }
+                                                    } else {
+                                                        console.warn(choice);
+                                                    }
+                                                }
+                                            } else {
+                                                console.warn(data);
+                                            }
+                                        } catch (error) {
+                                            console.error(error);
+                                        }
+                                    }
+                                }
+                                else if (line.startsWith(':')) {
+                                    const comment = line.slice(1).trim();
+                                    console.log(":", comment);
+                                }
+
+                                else if (line.startsWith('event:')) {
+                                    const event = line.slice(6).trim();
+                                    console.log("event:", event);
+                                }
+                                else if (line.startsWith('id:')) {
+                                    const id = line.slice(3).trim();
+                                    console.log("id:", id);
+                                }
+                                else if (line.startsWith('retry:')) {
+                                    const retry = line.slice(6).trim();
+                                    console.log("retry:", retry);
+                                }
+                                else if (line.startsWith('error:')) {
+                                    const error = line.slice(6).trim();
+                                    console.error("error:", error);
+                                }
+                                else {
+                                    console.warn(line);
+                                }
+                            }
+                        }
+                    }
+                    completion.body.messages.push(message);
+                    chat.completions.push(completion);
+                    console.log(completion);
+                } else {
+                    const data = await response.json();
+                    if (response.ok && data && data.choices && data.choices.length > 0) {
+                        console.log(JSON.stringify(data, null, 2));
+
+                        for (const choice of data.choices) {
+                            completion.contents.push(data);
+                            message.content += choice.message.content;
+                        }
+                        completion.body.messages.push(message);
+                        chat.completions.push(completion);
+                    } else {
+                        throw new Error();
+                    }
+                }
+            } catch (error) {
+                console.error(error);
+            }
+        }
+
+        // models
+        async function fetchModels() {
+            const modelsResponse = await fetch(`${API_URL}/models`);
+            modelsJson = await modelsResponse.json();
+            return modelsJson.data;
+        }
+
+        function renderModels(value) {
+            const modelsElement = document.getElementById("models");
+            modelsElement.innerHTML = "";
+            for (const model of models) {
+                const option = document.createElement("option");
+                option.value = model.id;
+                option.textContent = model.name;
+                option.title = model.description;
+                modelsElement.appendChild(option);
+            }
+            if (value && models.some(model => model.id == value)) {
+                modelsElement.value = value;
+            }
+            modelsElement.addEventListener("change", (event) => {
+                model = event.target.value;
+            });
+        }
+
+        async function initialize() {
+            document.getElementById("models").addEventListener("change", onModelChange);
+            document.getElementById("prompt").addEventListener("input", onPromptInput);
+            document.getElementById("stream").addEventListener("change", onStreamChange);
+            document.getElementById("send").addEventListener("click", complete);
+            models = await fetchModels();
+            renderModels(model);
+        }
+
+        window.addEventListener("load", initialize);
+    </script>
+</body>
+
+</html>
