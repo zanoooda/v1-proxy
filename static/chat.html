@@ -17,7 +17,7 @@
         const API_URL = "/api-v1";
 
         let models = [];
-        let chat = {
+        let dialog = {
             completions: []
         }
 
@@ -25,6 +25,13 @@
         let stream = true;
 
         // interface
+        const modelsElement = document.getElementById("models");
+        const messagesElement = document.getElementById("messages");
+        const promptElement = document.getElementById("prompt");
+        const filesElement = document.getElementById("files");
+        const streamElement = document.getElementById("stream");
+        const sendButton = document.getElementById("send");
+
         function onModelChange(event) {
             model = event.target.value;
             // ...
@@ -32,7 +39,16 @@
 
         function onPromptInput(event) {
             const prompt = event.target.value;
-            document.getElementById("send").disabled = !prompt.trim();
+            sendButton.disabled = !prompt.trim();
+        }
+
+        function onPromptKeyDown(event) {
+            if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                if (!sendButton.disabled) {
+                    sendButton.click();
+                }
+            }
         }
 
         function onStreamChange(event) {
@@ -41,7 +57,7 @@
 
         // chat/completions
         function readText() {
-            const value = document.getElementById("prompt").value;
+            const value = promptElement.value;
             const text = value.trim();
             if (!text) {
                 throw new Error();
@@ -51,7 +67,7 @@
 
         async function readFiles() {
             let files = [];
-            for (const file of document.getElementById("files").files) {
+            for (const file of filesElement.files) {
                 if (file.type.startsWith("image/") || file.type == "application/pdf") {
                     try {
                         const data = await new Promise((resolve, reject) => {
@@ -70,6 +86,8 @@
                                 name: file.name,
                                 data: data
                             });
+                        } else {
+                            console.warn(file);
                         }
                     } catch (error) {
                         console.error(error);
@@ -83,7 +101,7 @@
         }
 
         async function complete() {
-            document.getElementById("send").disabled = true;
+            sendButton.disabled = true;
             try {
                 let text = readText();
                 let files = await readFiles();
@@ -118,8 +136,8 @@
                     content = text;
                 }
                 let messages;
-                if (chat.completions.length > 0) {
-                    messages = chat.completions[chat.completions.length - 1].body.messages;
+                if (dialog.completions.length > 0) {
+                    messages = dialog.completions[dialog.completions.length - 1].body.messages;
                     messages.push({
                         role: "user",
                         content: content
@@ -132,12 +150,13 @@
                 }
                 let completion = {
                     body: { model, stream, messages },
-                    contents: [],
-                    reasonings: [],
-                    reasoning: "",
+                    outputs: [],
+                    // contents: [],
+                    // reasonings: [],
+                    // reasoning: "",
                 };
 
-                let assistantMessage = {
+                let message = {
                     role: "assistant",
                     content: "",
                 };
@@ -151,12 +170,11 @@
                 if (response.headers.get("content-type")?.startsWith("text/event-stream")) {
                     const reader = response.body.getReader();
                     const decoder = new TextDecoder();
-                    let done = false;
-                    while (!done) {
-                        const { value, done: doneReading } = await reader.read();
-                        done = doneReading;
+                    let stop = false;
+                    while (!stop) {
+                        const { value, done } = await reader.read();
                         if (done) {
-                            break;
+                            stop = true;
                         }
                         const chunk = decoder.decode(value, { stream: true });
                         const lines = chunk.split('\n');
@@ -165,42 +183,32 @@
                                 if (line.startsWith('data:')) {
                                     const dataString = line.slice(5).trim();
                                     if (dataString && dataString === '[DONE]') {
-                                        done = true;
+                                        completion.outputs.push(line);
+                                        stop = true;
                                     } else {
                                         try {
                                             const data = JSON.parse(dataString);
-                                            if (data.choices && data.choices.length > 0) {
-                                                for (let i = 0; i < data.choices.length; i++) {
-                                                    if (i > 0) {
-                                                        console.warn(i);
-                                                    }
-                                                    const choice = data.choices[i];
-                                                    if (choice?.finish_reason === "stop" || choice?.native_finish_reason === "stop") {
-                                                        console.warn(choice);
-                                                        // ?
-                                                    }
-                                                    if (choice?.delta) {
-                                                        if (choice.delta.reasoning) {
-                                                            completion.reasonings.push(data);
-                                                            completion.reasoning += choice.delta.reasoning;
-                                                            // render reasoning
+                                            if (data) {
+                                                if (data.choices && data.choices.length > 0) {
+                                                    for (let i = 0; i < data.choices.length; i++) {
+                                                        if (i > 0) {
+                                                            console.warn(i);
                                                         }
-                                                        if (choice.delta.content) {
-                                                            completion.contents.push(data);
-                                                            assistantMessage.content += choice.delta.content;
+                                                        if (data.choices[i]?.delta?.content) {
+                                                            message.content += data.choices[i].delta.content;
                                                             // render message
-                                                        } else {
-                                                            console.warn(choice.delta);
-                                                            // ?
                                                         }
-                                                    } else {
-                                                        console.warn(choice);
                                                     }
+                                                } else {
+                                                    completion.outputs.push(data);
+                                                    console.warn(data);
                                                 }
                                             } else {
-                                                console.warn(data);
+                                                completion.outputs.push(line);
+                                                console.warn(line);
                                             }
                                         } catch (error) {
+                                            completion.outputs.push(line);
                                             console.error(error);
                                         }
                                     }
@@ -209,7 +217,6 @@
                                     const comment = line.slice(1).trim();
                                     console.log(":", comment);
                                 }
-
                                 else if (line.startsWith('event:')) {
                                     const event = line.slice(6).trim();
                                     console.log("event:", event);
@@ -231,9 +238,12 @@
                                 }
                             }
                         }
+                        if (stop) {
+                            break;
+                        }
                     }
-                    completion.body.messages.push(assistantMessage);
-                    chat.completions.push(completion);
+                    completion.body.messages.push(message);
+                    dialog.completions.push(completion);
                 } else {
                     const data = await response.json();
                     if (response.ok && data && data.choices && data.choices.length > 0) {
@@ -241,22 +251,22 @@
                             if (i > 0) {
                                 console.warn(i);
                             }
-                            completion.contents.push(data);
-                            assistantMessage.content += data.choices[i].message.content;
+                            // completion.contents.push(data);      //
+                            message.content += data.choices[i].message.content;
                         }
-                        completion.body.messages.push(assistantMessage);
-                        chat.completions.push(completion);
+                        completion.body.messages.push(message);
+                        // completion.reasoning = data.choices[0].reasoning || "";
+                        dialog.completions.push(completion);
                     } else {
                         throw new Error();
                     }
                 }
                 // clear input
-                document.getElementById("prompt").value = "";
-                document.getElementById("files").value = "";
-                document.getElementById("send").disabled = false;
+                promptElement.value = "";
+                filesElement.value = "";
+                sendButton.disabled = false;
                 // render messages
-                console.log(chat);
-                const messagesElement = document.getElementById("messages");
+                console.log(dialog);
                 const messageDiv = document.createElement("div");
                 messageDiv.className = "message";
                 messageDiv.innerHTML = `<strong>User:</strong> ${text}<br>`;
@@ -280,7 +290,7 @@
                 messagesElement.appendChild(messageDiv);
                 const assistantDiv = document.createElement("div");
                 assistantDiv.className = "message assistant";
-                assistantDiv.innerHTML = `<strong>Assistant:</strong> ${assistantMessage.content}`;
+                assistantDiv.innerHTML = `<strong>Assistant:</strong> ${message.content}`;
                 messagesElement.appendChild(assistantDiv);
                 messagesElement.scrollTop = messagesElement.scrollHeight;
             } catch (error) {
@@ -296,7 +306,6 @@
         }
 
         function renderModels(value) {
-            const modelsElement = document.getElementById("models");
             modelsElement.innerHTML = "";
             for (const model of models) {
                 const option = document.createElement("option");
@@ -308,27 +317,25 @@
             if (value && models.some(model => model.id == value)) {
                 modelsElement.value = value;
             }
-            modelsElement.addEventListener("change", (event) => {
-                model = event.target.value;
-            });
         }
 
-        function enableInputs() {
-            document.getElementById("models").disabled = false;
-            document.getElementById("prompt").disabled = false;
-            document.getElementById("files").disabled = false;
-            document.getElementById("stream").disabled = false;
-            document.getElementById("send").disabled = false;
-        }
-        
         async function initialize() {
-            document.getElementById("models").addEventListener("change", onModelChange);
-            document.getElementById("prompt").addEventListener("input", onPromptInput);
-            document.getElementById("stream").addEventListener("change", onStreamChange);
-            document.getElementById("send").addEventListener("click", complete);
-            models = await fetchModels();
-            renderModels(model);
-            enableInputs();
+            modelsElement.addEventListener("change", onModelChange);
+            promptElement.addEventListener("input", onPromptInput);
+            promptElement.addEventListener("keydown", onPromptKeyDown);
+            streamElement.addEventListener("change", onStreamChange);
+            sendButton.addEventListener("click", complete);
+            try {
+                models = await fetchModels();
+                renderModels(model);
+                modelsElement.disabled = false;
+                promptElement.disabled = false;
+                filesElement.disabled = false;
+                streamElement.disabled = false;
+                sendButton.disabled = false;
+            } catch (error) {
+                console.error(error);
+            }
         }
 
         window.addEventListener("load", initialize);
