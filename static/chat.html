@@ -135,22 +135,17 @@
                 } else {
                     content = text;
                 }
-                let messages;
+                let messages = [];
                 if (dialog.completions.length > 0) {
                     messages = dialog.completions[dialog.completions.length - 1].body.messages;
-                    messages.push({
-                        role: "user",
-                        content: content
-                    });
-                } else {
-                    messages = [{
-                        role: "user",
-                        content: content
-                    }];
                 }
+                messages.push({
+                    role: "user",
+                    content: content
+                });
                 let completion = {
                     body: { model, stream, messages },
-                    outputs: []
+                    chunks: [],
                 };
 
                 let message = {
@@ -174,46 +169,33 @@
                             stop = true;
                         }
                         const chunk = decoder.decode(value, { stream: true });
-                        const lines = chunk.split('\n');
-                        for (const line of lines) {
-                            if (line) {
-                                if (line.startsWith('data:')) {
-                                    const dataString = line.slice(5).trim();
-                                    if (dataString && dataString === '[DONE]') {
-                                        completion.outputs.push(line);
-                                        stop = true;
-                                    } else {
-                                        try {
-                                            const data = JSON.parse(dataString);
-                                            if (data) {
-                                                if (data.choices && data.choices.length > 0) {
-                                                    for (let i = 0; i < data.choices.length; i++) {
-                                                        if (i > 0) {
-                                                            console.warn(i);
-                                                        }
-                                                        if (data.choices[i]?.delta?.content) {
-                                                            message.content += data.choices[i].delta.content;
-                                                            // render message
-                                                        }
-                                                    }
-                                                }
-                                                completion.outputs.push(data);
-                                            } else {
-                                                completion.outputs.push(line);
-                                                console.warn(line);
-                                            }
-                                        } catch (error) {
-                                            completion.outputs.push(line);
-                                            console.error(error);
-                                        }
-                                    }
-                                } else {
-                                    completion.outputs.push(line);
-                                }
-                            }
-                        }
+                        completion.chunks.push(chunk);
+                        // rerender
                         if (stop) {
                             break;
+                        }
+                    }
+                    for (let i = 0; i < completion.chunks.length; i++) {
+                        const chunk = completion.chunks[i];
+                        const lines = chunk.split('\n');
+                        for (const line of lines) {
+                            if (line.startsWith('data:')) {
+                                const dataString = line.slice(5).trim();
+                                if (dataString == '[DONE]') {
+                                    continue;
+                                }
+                                const data = JSON.parse(dataString);
+                                if (data && data.choices && data.choices.length > 0) {
+                                    for (let j = 0; j < data.choices.length; j++) {
+                                        if (j > 0) {
+                                            console.warn(j);
+                                        }
+                                        if (data.choices[j]?.delta?.content) {
+                                            message.content += data.choices[j].delta.content;
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                     completion.body.messages.push(message);
@@ -225,11 +207,9 @@
                             if (i > 0) {
                                 console.warn(i);
                             }
-                            // completion.contents.push(data);      //
                             message.content += data.choices[i].message.content;
                         }
                         completion.body.messages.push(message);
-                        // completion.reasoning = data.choices[0].reasoning || "";
                         dialog.completions.push(completion);
                     } else {
                         throw new Error();
