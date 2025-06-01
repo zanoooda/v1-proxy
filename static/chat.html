@@ -150,10 +150,7 @@
                 }
                 let completion = {
                     body: { model, stream, messages },
-                    outputs: [],
-                    // contents: [],
-                    // reasonings: [],
-                    // reasoning: "",
+                    outputs: []
                 };
 
                 let message = {
@@ -199,10 +196,8 @@
                                                             // render message
                                                         }
                                                     }
-                                                } else {
-                                                    completion.outputs.push(data);
-                                                    console.warn(data);
                                                 }
+                                                completion.outputs.push(data);
                                             } else {
                                                 completion.outputs.push(line);
                                                 console.warn(line);
@@ -212,29 +207,8 @@
                                             console.error(error);
                                         }
                                     }
-                                }
-                                else if (line.startsWith(':')) {
-                                    const comment = line.slice(1).trim();
-                                    console.log(":", comment);
-                                }
-                                else if (line.startsWith('event:')) {
-                                    const event = line.slice(6).trim();
-                                    console.log("event:", event);
-                                }
-                                else if (line.startsWith('id:')) {
-                                    const id = line.slice(3).trim();
-                                    console.log("id:", id);
-                                }
-                                else if (line.startsWith('retry:')) {
-                                    const retry = line.slice(6).trim();
-                                    console.log("retry:", retry);
-                                }
-                                else if (line.startsWith('error:')) {
-                                    const error = line.slice(6).trim();
-                                    console.error("error:", error);
-                                }
-                                else {
-                                    console.warn(line);
+                                } else {
+                                    completion.outputs.push(line);
                                 }
                             }
                         }
