@@ -29,10 +29,7 @@
             margin-right: max(30vw, 400px);
         }
 
-        .right-panel-open #parameters-menu {
-            display: none;
-        }
-
+        .right-panel-open #parameters-menu,
         .left-panel-open #dialogs-menu {
             display: none;
         }
@@ -142,16 +139,25 @@
                 margin-right: 0;
             }
 
-            .completion.left-panel-open {
-                margin-left: 0;
-            }
-
+            .completion.left-panel-open,
             .completion.right-panel-open {
                 margin-right: 0;
             }
 
+            .settings,
+            #messages {
+                margin-left: 8px;
+                margin-right: 8px;
+            }
+
             .panel {
                 width: 100vw;
+            }
+
+            #models,
+            #files {
+                width: 100%;
+                box-sizing: border-box;
             }
         }
     </style>
@@ -200,7 +206,7 @@
             <button data-toggle-panel="right">Hide</button>
         </div>
         <div class="panel-body">
-            <div id="required-parameters"> 
+            <div id="required-parameters">
                 <div class="parameter">
                     <label for="model">model:</label>
                     <input id="model" type="text" value="Model A" title="Model Aaa" disabled>
@@ -333,32 +339,10 @@
         const onPromptKeyDown = event => {
             if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
-                if (!sendElement.disabled) {
-                    sendElement.click();
+                if (!document.getElementById("send").disabled) {
+                    complete();
                 }
             }
-        }
-
-        const fetchModels = async () => {
-            const modelsResponse = await fetch(`${API_URL}/models`);
-            modelsJson = await modelsResponse.json();
-            return modelsJson.data;
-        }
-
-        const renderModels = value => {
-            const modelsElement = document.getElementById("models");
-            modelsElement.innerHTML = "";
-            for (const model of models) {
-                const option = document.createElement("option");
-                option.value = model.id;
-                option.textContent = model.name;
-                option.title = model.description;
-                modelsElement.appendChild(option);
-            }
-            if (value && models.some(model => model.id == value)) {
-                modelsElement.value = value;
-            }
-            modelsElement.dispatchEvent(new Event("change"));
         }
 
         const onModelChange = event => {
@@ -385,6 +369,274 @@
             });
         };
 
+        // ...
+        function readText() {
+            const value = document.getElementById("prompt").value;
+            const text = value.trim();
+            if (!text) {
+                throw new Error();
+            }
+            return text;
+        }
+
+        async function readFiles() {
+            let files = [];
+            for (const file of document.getElementById("files").files) {
+                try {
+                    const data = await new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = e => resolve(e.target.result)
+                        reader.onerror = reject;
+                        reader.readAsDataURL(file);
+                    });
+                    if (data) {
+                        files.push({
+                            type: file.type,
+                            name: file.name,
+                            data: data
+                        });
+                    } else {
+                        console.warn(file);
+                    }
+                } catch (error) {
+                    console.error(error);
+                    continue;
+                }
+            }
+            return files;
+        }
+
+        const renderMessage = (message, role) => {
+            // remove reasoning if exists
+            const reasoningElement = document.querySelector("#messages .message.reasoning");
+            if (reasoningElement) {
+                reasoningElement.remove();
+            }
+            // remove partial messages
+            const partialMessages = document.querySelectorAll("#messages .message.partial");
+            partialMessages.forEach(el => el.remove());
+            // ...
+            const messagesElement = document.getElementById("messages");
+            const messageElement = document.createElement("div");
+            messageElement.className = `message ${role}`;
+            if (role === "assistant") {
+                messageElement.innerHTML = `<strong>Assistant:</strong> ${message.content}`;
+            } else {
+                messageElement.innerHTML = `<strong>User:</strong> ${message.content}`;
+            }
+            messagesElement.appendChild(messageElement);
+            messagesElement.scrollTop = messagesElement.scrollHeight;
+        };
+
+        const renderChunk = chunk => {
+            // create or update reasoning (or remove it if finished)
+            // if finished, render the partial message
+            // ...
+            try {
+                for (const line of chunk.split('\n')) {
+                    if (line.startsWith('data:')) {
+                        const dataString = line.slice(5).trim();
+                        if (dataString === '[DONE]') {
+                            continue;
+                        }
+                        const data = JSON.parse(dataString);
+                        if (data && data.choices && data.choices.length > 0) {
+                            for (let i = 0; i < data.choices.length; i++) {
+                                if (i > 0) {
+                                    console.warn(i);
+                                }
+                                const choice = data.choices[i];
+                                if (choice.delta && choice.delta.content) {
+                                    const lastMessage = document.querySelector("#messages .message.assistant:last-child");
+                                    if (lastMessage) {
+                                        lastMessage.innerHTML += choice.delta.content;
+                                    } else {
+                                        let messageElement = document.createElement("div");
+                                        messageElement.className = "message assistant partial";
+                                        messageElement.innerHTML = `<strong>Assistant:</strong> ${choice.delta.content}`;
+                                        document.getElementById("messages").appendChild(messageElement);
+
+                                    }
+                                }
+                                if (choice.delta && choice.delta.reasoning) {
+                                    const reasoningElement = document.querySelector("#messages .message.reasoning");
+                                    if (reasoningElement) {
+                                        reasoningElement.innerHTML += choice.delta.reasoning;
+                                    } else {
+                                        let messageElement = document.createElement("div");
+                                        messageElement.className = "message reasoning";
+                                        messageElement.innerHTML = `<strong>Reasoning:</strong> ${choice.delta.reasoning}`;
+                                        document.getElementById("messages").appendChild(messageElement);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error(error);
+            }
+
+            // scroll to bottom
+            const messagesElement = document.getElementById("messages");
+            messagesElement.scrollTop = messagesElement.scrollHeight;
+        };
+
+        async function complete() {
+            document.getElementById("send").disabled = true;
+            try {
+                let text = readText();
+                let files = await readFiles();
+                const stream = document.getElementById("stream").checked;
+
+                document.getElementById("files").value = "";
+
+                let content;
+                if (files.length > 0) {
+                    content = [];
+                    for (const file of files) {
+                        if (file.type.startsWith("image/")) {
+                            content.push({
+                                type: "image_url",
+                                image_url: {
+                                    url: file.data,
+                                }
+                            });
+                        } else if (file.type === "application/pdf") {
+                            content.push({
+                                type: "file",
+                                file: {
+                                    file_data: file.data,
+                                    filename: file.name
+                                }
+                            });
+                        }
+                    };
+                    content.push({
+                        type: "text",
+                        text: text
+                    });
+                } else {
+                    content = text;
+                }
+                let messages = [];
+                if (dialog.completions.length > 0) {
+                    messages = dialog.completions[dialog.completions.length - 1].body.messages;
+                }
+                messages.push({
+                    role: "user",
+                    content: content
+                });
+
+                renderMessage(messages[messages.length - 1], "user");
+                document.getElementById("prompt").value = "";
+
+                let completion = {
+                    body: { model, stream, messages }, // ...
+                    chunks: [],
+                };
+                // ...
+                let message = {
+                    role: "assistant",
+                    content: "",
+                };
+                const response = await fetch(`${API_URL}/chat/completions`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(completion.body)
+                });
+                if (response.headers.get("content-type")?.startsWith("text/event-stream")) {
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+                    let stop = false;
+                    while (!stop) {
+                        const { value, done } = await reader.read();
+                        if (done) {
+                            stop = true;
+                        }
+                        const chunk = decoder.decode(value, { stream: true });
+                        completion.chunks.push(chunk);
+                        // rerender
+                        renderChunk(chunk);
+                        if (stop) {
+                            break;
+                        }
+                    }
+                    for (let i = 0; i < completion.chunks.length; i++) {
+                        const chunk = completion.chunks[i];
+                        const lines = chunk.split('\n');
+                        for (const line of lines) {
+                            if (line.startsWith('data:')) {
+                                const dataString = line.slice(5).trim();
+                                if (dataString == '[DONE]') {
+                                    continue;
+                                }
+                                const data = JSON.parse(dataString);
+                                if (data && data.choices && data.choices.length > 0) {
+                                    for (let j = 0; j < data.choices.length; j++) {
+                                        if (j > 0) {
+                                            console.warn(j);
+                                        }
+                                        if (data.choices[j]?.delta?.content) {
+                                            message.content += data.choices[j].delta.content;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    completion.body.messages.push(message);
+                    dialog.completions.push(completion);
+                } else {
+                    const data = await response.json();
+                    if (response.ok && data && data.choices && data.choices.length > 0) {
+                        for (let i = 0; i < data.choices.length; i++) {
+                            if (i > 0) {
+                                console.warn(i);
+                            }
+                            message.content += data.choices[i].message.content;
+                        }
+                        completion.body.messages.push(message);
+                        dialog.completions.push(completion);
+                    } else {
+                        throw new Error();
+                    }
+                }
+                // clear input
+                // document.getElementById("files").value = "";
+                document.getElementById("send").disabled = false;
+                // render messages
+                renderMessage(message, "assistant");
+            } catch (error) {
+                console.error(error);
+            }
+        }
+        //
+
+        const fetchModels = async () => {
+            const modelsResponse = await fetch(`${API_URL}/models`);
+            modelsJson = await modelsResponse.json();
+            return modelsJson.data;
+        }
+
+        const renderModels = value => {
+            const modelsElement = document.getElementById("models");
+            modelsElement.innerHTML = "";
+            for (const model of models) {
+                const option = document.createElement("option");
+                option.value = model.id;
+                option.textContent = model.name;
+                option.title = model.description;
+                modelsElement.appendChild(option);
+            }
+            if (value && models.some(model => model.id == value)) {
+                modelsElement.value = value;
+            }
+            modelsElement.dispatchEvent(new Event("change"));
+        }
+
         const initialize = async () => {
             document.querySelectorAll("[data-toggle-panel]").forEach(button => {
                 button.addEventListener("click", () => {
@@ -400,6 +652,7 @@
                 document.getElementById("more").textContent = moreSection.classList.contains('hidden') ? 'More' : 'Less';
             });
             document.getElementById("models").addEventListener("change", onModelChange);
+            document.getElementById("send").addEventListener("click", complete);
             try {
                 models = await fetchModels();
                 renderModels(model);
