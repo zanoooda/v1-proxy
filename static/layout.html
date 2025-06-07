@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>Title</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <style>
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+        }
+
+        .completion {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            min-width: 400px;
+            margin-left: 20vw;
+            margin-right: 20vw;
+        }
+
+        .completion.left-panel-open {
+            margin-left: max(30vw, 400px);
+        }
+
+        .completion.right-panel-open {
+            margin-right: max(30vw, 400px);
+        }
+
+        .right-panel-open #parameters-menu {
+            display: none;
+        }
+
+        .left-panel-open #dialogs-menu {
+            display: none;
+        }
+
+        .settings {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 8px 0;
+        }
+
+        .wide {
+            flex: 1;
+        }
+
+        .inputs {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px;
+        }
+
+        .inputs textarea {
+            flex: 1;
+            min-width: 0;
+        }
+
+        #more {
+            align-self: flex-end;
+            margin-top: auto;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .panel {
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            width: 30vw;
+            height: 100vh;
+            min-width: 400px;
+            overflow-y: auto;
+            z-index: 1;
+            transition: transform 0.1s;
+            background: white;
+        }
+
+        .panel.left {
+            left: 0;
+            transform: translateX(-100%);
+        }
+
+        .panel.right {
+            right: 0;
+            transform: translateX(100%);
+        }
+
+        .panel.open {
+            transform: translateX(0);
+        }
+
+        .panel-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 8px;
+        }
+
+        .panel-body {
+            margin: 8px;
+        }
+
+        .panel-title {
+            flex: 1;
+        }
+
+        .parameter {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .parameter label {
+            min-width: max(15vw, 150px);
+            margin-bottom: 0;
+        }
+
+        .parameter label.disabled {
+            color: #888;
+        }
+
+        .parameter textarea {
+            display: block;
+            margin-left: 0;
+        }
+
+        .parameter:has(textarea) {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        @media (max-width: 600px) {
+            .completion {
+                margin-left: 0;
+                margin-right: 0;
+            }
+
+            .completion.left-panel-open {
+                margin-left: 0;
+            }
+
+            .completion.right-panel-open {
+                margin-right: 0;
+            }
+
+            .panel {
+                width: 100vw;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <main class="completion">
+        <nav class="settings">
+            <button id="dialogs-menu" data-toggle-panel="left">Dialogs</button>
+            <select id="models" class="wide" title="Select model"></select>
+            <button id="parameters-menu" data-toggle-panel="right">Parameters</button>
+        </nav>
+
+        <div id="messages" class="wide"></div>
+
+        <div>
+            <div class="inputs">
+                <button id="more">More</button>
+
+                <textarea id="prompt" rows="1"></textarea>
+                <button id="send" disabled>Send</button>
+            </div>
+            <div class="more inputs hidden">
+                <input id="files" type="file" class="wide" multiple accept="image/*,.pdf">
+                <select id="speech-language" disabled>
+                    <option value="en-US" selected>English (US)</option>
+                </select>
+                <button disabled>Speech</button>
+            </div>
+        </div>
+    </main>
+
+    <div class="left panel">
+        <div class="panel-header">
+            <div class="panel-title">Dialogs</div>
+            <button data-toggle-panel="left">Hide</button>
+        </div>
+        <div class="panel-body">
+            ...
+        </div>
+    </div>
+    <div class="right panel">
+        <div class="panel-header">
+            <div class="panel-title">Parameters</div>
+            <button>Clear</button>
+            <button data-toggle-panel="right">Hide</button>
+        </div>
+        <div class="panel-body">
+            <div>
+                <div class="parameter">
+                    <label for="model">model:</label>
+                    <input id="model" type="text" value="Model A" title="Model Aaa" disabled>
+                </div>
+
+                <div class="parameter">
+                    <label for="model-details"></label>
+                    <button id="model-details">Model details</button>
+                </div>
+
+                <div class="parameter">
+                    <label for="stream">stream:</label>
+                    <input id="stream" type="checkbox" checked>
+                </div>
+            </div>
+            <div id="optional-parameters">
+                <div class="parameter">
+                    <label for="max_tokens">max_tokens:</label>
+                    <input id="max_tokens" type="number" min="1" max="4096" placeholder="256">
+                </div>
+                <div class="parameter">
+                    <label for="temperature">temperature:</label>
+                    <input id="temperature" type="number" step="0.01" min="0" max="2" placeholder="0.7">
+                </div>
+                <div class="parameter">
+                    <label for="stop">stop:</label>
+                    <textarea id="stop" rows="1" placeholder="\n, ###, [END]"></textarea>
+                </div>
+                <div class="parameter">
+                    <label for="reasoning">reasoning:</label>
+                    <input id="reasoning" type="checkbox">
+                </div>
+                <div class="parameter">
+                    <label for="include_reasoning">include_reasoning:</label>
+                    <input id="include_reasoning" type="checkbox">
+                </div>
+                <div class="parameter">
+                    <label for="tools">tools:</label>
+                    <textarea id="tools" rows="1" placeholder='[{"type": "calculator"}, {"type": "search"}]'></textarea>
+                </div>
+                <div class="parameter">
+                    <label for="tool_choice">tool_choice:</label>
+                    <input id="tool_choice" type="text" placeholder="calculator">
+                </div>
+                <div class="parameter">
+                    <label for="top_p">top_p:</label>
+                    <input id="top_p" type="number" step="0.01" min="0" max="1" placeholder="1.0">
+                </div>
+                <div class="parameter">
+                    <label for="top_k">top_k:</label>
+                    <input id="top_k" type="number" min="1" max="100" placeholder="1">
+                </div>
+                <div class="parameter">
+                    <label for="min_p">min_p:</label>
+                    <input id="min_p" type="number" step="0.01" min="0" max="1" placeholder="0.0">
+                </div>
+                <div class="parameter">
+                    <label for="top_a">top_a:</label>
+                    <input id="top_a" type="number" step="0.01" min="0" max="1" placeholder="0.0">
+                </div>
+                <div class="parameter">
+                    <label for="seed">seed:</label>
+                    <input id="seed" type="number" placeholder="42">
+                </div>
+                <div class="parameter">
+                    <label for="presence_penalty">presence_penalty:</label>
+                    <input id="presence_penalty" type="number" step="0.01" min="-2" max="2" placeholder="0.0">
+                </div>
+                <div class="parameter">
+                    <label for="frequency_penalty">frequency_penalty:</label>
+                    <input id="frequency_penalty" type="number" step="0.01" min="-2" max="2" placeholder="0.0">
+                </div>
+                <div class="parameter">
+                    <label for="repetition_penalty">repetition_penalty:</label>
+                    <input id="repetition_penalty" type="number" step="0.01" min="1" max="2" placeholder="1.0">
+                </div>
+                <div class="parameter">
+                    <label for="logit_bias">logit_bias:</label>
+                    <textarea id="logit_bias" rows="1" placeholder='{"50256": -100, "198": 5}'></textarea>
+                </div>
+                <div class="parameter">
+                    <label for="logprobs">logprobs:</label>
+                    <input id="logprobs" type="number" min="1" max="5" placeholder="1">
+                </div>
+                <div class="parameter">
+                    <label for="top_logprobs">top_logprobs:</label>
+                    <input id="top_logprobs" type="number" min="1" max="5" placeholder="1">
+                </div>
+                <div class="parameter">
+                    <label for="response_format">response_format:</label>
+                    <input id="response_format" type="text" placeholder="json_object">
+                </div>
+                <div class="parameter">
+                    <label for="structured_outputs">structured_outputs:</label>
+                    <input id="structured_outputs" type="checkbox">
+                </div>
+                <div class="parameter">
+                    <label for="web_search_options">web_search_options:</label>
+                    <textarea id="web_search_options" rows="1"
+                        placeholder='{"region": "us", "num_results": 5}'></textarea>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = "http://149.102.137.139/api-v1";
+
+        let models = [];
+        let dialog = {
+            completions: []
+        }
+
+        let model = "anthropic/claude-sonnet-4";
+
+        // ...
+
+        const togglePanel = side => {
+            const panel = document.querySelector(`.panel.${side}`);
+            panel.classList.toggle('open');
+            document.body.classList.toggle(`${side}-panel-open`);
+            document.querySelector('main').classList.toggle(`${side}-panel-open`);
+        };
+        const onPromptInput = event => {
+            const lines = event.target.value.split('\n');
+            event.target.rows = Math.max(1, lines.length < 11 ? lines.length : 11);
+            document.getElementById("send").disabled = !event.target.value.trim();
+        };
+
+        const onPromptKeyDown = event => {
+            if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                if (!sendElement.disabled) {
+                    sendElement.click();
+                }
+            }
+        }
+
+        const fetchModels = async () => {
+            const modelsResponse = await fetch(`${API_URL}/models`);
+            modelsJson = await modelsResponse.json();
+            return modelsJson.data;
+        }
+
+        const renderModels = value => {
+            const modelsElement = document.getElementById("models");
+            modelsElement.innerHTML = "";
+            for (const model of models) {
+                const option = document.createElement("option");
+                option.value = model.id;
+                option.textContent = model.name;
+                option.title = model.description;
+                modelsElement.appendChild(option);
+            }
+            if (value && models.some(model => model.id == value)) {
+                modelsElement.value = value;
+            }
+            modelsElement.dispatchEvent(new Event("change"));
+        }
+
+        const onModelChange = event => {
+            model = event.target.value;
+            const modelObject = models.find(m => m.id === model);
+            // disable optional parameters if not supported by the model
+            document.getElementById("optional-parameters").childNodes.forEach(node => {
+                if (node.classList && node.classList.contains("parameter")) {
+                    const input = node.querySelector("input, textarea");
+                    const label = node.querySelector("label");
+                    if (input) {
+                        const paramName = input.id;
+                        if (modelObject.supported_parameters.includes(paramName)) {
+                            input.disabled = false;
+                            label.classList.remove("disabled");
+                        } else {
+                            input.disabled = true;
+                            label.classList.add("disabled");
+                        }
+                    }
+                }
+            });
+        };
+
+        const initialize = async () => {
+            document.querySelectorAll("[data-toggle-panel]").forEach(button => {
+                button.addEventListener("click", () => {
+                    const side = button.getAttribute('data-toggle-panel');
+                    togglePanel(side);
+                });
+            });
+            document.getElementById("prompt").addEventListener("input", onPromptInput);
+            document.getElementById("prompt").addEventListener("keydown", onPromptKeyDown);
+            document.getElementById("more").addEventListener("click", () => {
+                const moreSection = document.querySelector('.more');
+                moreSection.classList.toggle('hidden');
+                document.getElementById("more").textContent = moreSection.classList.contains('hidden') ? 'More' : 'Less';
+            });
+            document.getElementById("models").addEventListener("change", onModelChange);
+            try {
+                models = await fetchModels();
+                renderModels(model);
+                document.getElementById("send").disabled = false;
+            } catch (error) {
+                console.error(error);
+            }
+        };
+        window.addEventListener("load", initialize);
+    </script>
+</body>
+
+</html>
