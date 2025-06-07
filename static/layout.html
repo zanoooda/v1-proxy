@@ -162,7 +162,7 @@
         <nav class="settings">
             <button id="dialogs-menu" data-toggle-panel="left">Dialogs</button>
             <select id="models" class="wide" title="Select model"></select>
-            <button id="parameters-menu" data-toggle-panel="right">Parameters</button>
+            <button id="parameters-menu" data-toggle-panel="right" disabled>Parameters</button>
         </nav>
 
         <div id="messages" class="wide"></div>
@@ -364,22 +364,9 @@
         const onModelChange = event => {
             model = event.target.value;
             const modelObject = models.find(m => m.id === model);
-            document.getElementById("required-parameters").childNodes.forEach(node => {
-                if (node.classList && node.classList.contains("parameter")) {
-                    const input = node.querySelector("input, textarea");
-                    const label = node.querySelector("label");
-                    if (input) {
-                        const paramName = input.id;
-                        if (modelObject.required_parameters.includes(paramName)) {
-                            input.disabled = false;
-                            label.classList.remove("disabled");
-                        } else {
-                            input.disabled = true;
-                            label.classList.add("disabled");
-                        }
-                    }
-                }
-            });
+            const modelInput = document.getElementById("model");
+            modelInput.value = modelObject.name;
+            modelInput.title = modelObject.name;
             document.getElementById("optional-parameters").childNodes.forEach(node => {
                 if (node.classList && node.classList.contains("parameter")) {
                     const input = node.querySelector("input, textarea");
@@ -417,6 +404,7 @@
                 models = await fetchModels();
                 renderModels(model);
                 document.getElementById("send").disabled = false;
+                document.getElementById("parameters-menu").disabled = false;
             } catch (error) {
                 console.error(error);
             }
